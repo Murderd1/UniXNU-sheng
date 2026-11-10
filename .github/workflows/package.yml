@@ -109,6 +109,10 @@ jobs:
             echo 'Set the repository secret UNIXNU_UNIQUE_CHIP_ID: the platform seed of the device, 8 hex digits.' >&2
             exit 1
           fi
+      - name: Wi-Fi firmware inputs
+        run: |
+          python3 device/scripts/fetch-wifi-firmware.py
+          python3 device/scripts/check-wifi-firmware.py
       - name: seed cache identity
         id: seed-key
         env:

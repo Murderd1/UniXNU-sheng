@@ -26,6 +26,7 @@ component = root / "drivers/Ath12kWifi"
 firmware_prefix = re.search(r'^#define SHENG_WIFI_FIRMWARE_PREFIX "([^"]+)"$',
     (root / "package/WifiFirmware.h").read_text(), re.M).group(1)
 firmware_source = root / "firmware/wcn7850"
+subprocess.run([sys.executable, root / "scripts/fetch-wifi-firmware.py"], check=True)
 firmware_manifest = json.loads((firmware_source / "manifest.json").read_text())["files"]
 if not {'amss.bin', 'm3.bin', 'board-2.bin'} <= firmware_manifest.keys():
     raise SystemExit("missing required WCN7850 firmware inputs")

@@ -120,3 +120,14 @@ anchored patterns and individual files. Personal Ath12kWifi fork commit
 e62ba34 selects `sparse-checkout set --no-cone`; a local actual-Git fixture
 passes directory/file selection and check-only identity. Dependency pins and
 production runtime source are unchanged.
+
+Run [42836306639](https://github.com/Murderd1/UniXNU-sheng/actions/runs/42836306639)
+passes official tool installation, pinned firmware checks, the ASan/UBSan
+firmware-reader fixture and the full signed iOS Wi-Fi userspace preflight.
+The UEFI checkout completes and the preserved-seed package step starts.
+Final package output is pending.
+
+The user requests only this current run: on failure, retain diagnostics and
+pause for a persistent rented Mac, without dispatching another Actions run.
+The Windows output directory includes the verified userdata, installation
+backup and a Chinese cloud-Mac handoff guide. No target device is connected.

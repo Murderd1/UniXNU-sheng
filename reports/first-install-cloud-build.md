@@ -125,7 +125,11 @@ Run [42836306639](https://github.com/Murderd1/UniXNU-sheng/actions/runs/42836306
 passes official tool installation, pinned firmware checks, the ASan/UBSan
 firmware-reader fixture and the full signed iOS Wi-Fi userspace preflight.
 The UEFI checkout completes and the preserved-seed package step starts.
-Final package output is pending.
+The package step fails in build-adreno-metal-bridge.py because the `cargo`
+executable is absent from the subprocess PATH (`FileNotFoundError`). No
+successful boot.img is produced. The user requested a pause after this run;
+no further fix or dispatch was performed. Both uploaded diagnostics and the
+full Actions step log are retained locally for a rented persistent Mac.
 
 The user requests only this current run: on failure, retain diagnostics and
 pause for a persistent rented Mac, without dispatching another Actions run.

@@ -112,3 +112,11 @@ still parsed the invalid cask even with --formula. The workflow now uses
 `scripts/install-ipsw.py`: official ipsw 3.1.743 release archives, architecture
 selection and the SHA-256 values published in the official Homebrew formula.
 It extracts only the regular ipsw executable and checks its version.
+
+Run [42833337024](https://github.com/Murderd1/UniXNU-sheng/actions/runs/42833337024)
+passes tool installation and the firmware-reader check. The early userspace
+step exposes Ath12kWifi's cone-mode sparse checkout rejecting the lock's
+anchored patterns and individual files. Personal Ath12kWifi fork commit
+e62ba34 selects `sparse-checkout set --no-cone`; a local actual-Git fixture
+passes directory/file selection and check-only identity. Dependency pins and
+production runtime source are unchanged.

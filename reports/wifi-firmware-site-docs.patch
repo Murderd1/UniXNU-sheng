@@ -1,8 +1,8 @@
 diff --git a/docs/drivers/ath12k-wifi.md b/docs/drivers/ath12k-wifi.md
-index c6bc39d..bdbc5e4 100644
+index c6bc39d..63de5d9 100644
 --- a/docs/drivers/ath12k-wifi.md
 +++ b/docs/drivers/ath12k-wifi.md
-@@ -89,3 +89,19 @@ Device verification covers Wi-Fi toggling, SSID scanning, WPA2 association,
+@@ -89,3 +89,23 @@ Device verification covers Wi-Fi toggling, SSID scanning, WPA2 association,
  DHCP, traffic and join-result delivery. Current device checks pending:
  cancellation/timeout completion, signal display, Data firmware startup,
  throughput, jitter and heat. See the [sheng network record](/devices/sheng#network).
@@ -22,11 +22,15 @@ index c6bc39d..bdbc5e4 100644
 +`tools/fetch-sources.py` before building the supplicant. A clean checkout has
 +no `deps/` tree; `--check` alone cannot prepare it. The package workflow builds
 +and signs the iOS Wi-Fi layer before the long runtime preparation step.
++
++The source lock contains anchored patterns and individual files. Its fetcher
++uses `git sparse-checkout set --no-cone`; the default cone mode of a fresh
++sparse clone rejects those patterns. Dependency revisions are unchanged.
 diff --git a/docs/zh/drivers/ath12k-wifi.md b/docs/zh/drivers/ath12k-wifi.md
-index 1a4daa2..7a75adc 100644
+index 1a4daa2..00b26df 100644
 --- a/docs/zh/drivers/ath12k-wifi.md
 +++ b/docs/zh/drivers/ath12k-wifi.md
-@@ -86,3 +86,17 @@ python3 tools/check-mainline-link.py --build-report FILE --kernel FILE
+@@ -86,3 +86,21 @@ python3 tools/check-mainline-link.py --build-report FILE --kernel FILE
  设备已验证 Wi-Fi 开关、SSID 扫描、WPA2 关联、DHCP、网络流量和
  连接结果通知。当前待实测：取消和超时收尾、信号显示、Data 固件
  启动，以及吞吐、抖动和发热。详见[sheng 网络记录](/zh/devices/sheng#network)。
@@ -44,3 +48,7 @@ index 1a4daa2..7a75adc 100644
 +固定版本的依赖，然后编译 supplicant。干净检出没有 `deps/`，单独执行
 +`--check` 不会准备源码。打包流程在耗时的运行环境准备前先编译并签名
 +iOS Wi-Fi 用户态层。
++
++依赖锁包含根路径匹配规则和单个文件，因此获取器使用
++`git sparse-checkout set --no-cone`。新稀疏克隆默认的目录模式会
++拒绝这些规则。此修复不改变依赖版本。

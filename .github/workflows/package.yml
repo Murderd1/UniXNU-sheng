@@ -81,11 +81,6 @@ jobs:
           ref: 3e239995903ae59a2ea506c52c8e31341d357044 # Original pinned tools plus the clean-checkout Mesa patch fix
           path: UniXNU
           submodules: recursive
-      - uses: actions/checkout@v4
-        with:
-          repository: UniXNU/uefi-sheng
-          path: uefi-sheng
-          submodules: recursive
       - name: tools
         run: |
           brew install --formula dtc llvm lld cmake mtools ninja glslang shaderc spirv-tools bison pkgconf rustup
@@ -127,6 +122,11 @@ jobs:
       - name: Wi-Fi userspace preflight
         if: inputs.os == '27'
         run: python3 device/scripts/build-wifi-userspace.py device/build/wifi-preflight ios27
+      - uses: actions/checkout@v4
+        with:
+          repository: UniXNU/uefi-sheng
+          path: uefi-sheng
+          submodules: recursive
       - name: seed cache identity
         id: seed-key
         env:

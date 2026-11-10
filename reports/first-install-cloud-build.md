@@ -68,6 +68,11 @@ fixture now exercises all five existing names, rejects unknown/traversal names,
 creates its own output parents and retains sanitizer/assertion stderr. No
 production Wi-Fi behavior was changed.
 
+Run [42817825877](https://github.com/Murderd1/UniXNU-sheng/actions/runs/42817825877)
+passes the early Wi-Fi firmware-input step, including the existing ASan/UBSan
+reader fixture, and enters the full package step with the preserved Data seed.
+Its final boot-package result is pending.
+
 The userdata artifact ZIP and extracted image pass local SHA-256 checks. A
 streaming sparse decoder also verifies the SHNGROOT header, each original
 window, both existing signed policy headers, the complete reconstructed block

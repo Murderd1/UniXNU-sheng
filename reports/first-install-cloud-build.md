@@ -100,3 +100,9 @@ report macOS ARM capacity constraints; the job executed no build steps. The
 workflow now offers the standard macos-26-intel host and resolves Homebrew
 tool paths from its installed prefixes. This changes the build host only.
 The iPadOS profile, component pins and preserved installation seed are unchanged.
+
+The standard Intel host was allocated immediately in run
+[42829591813](https://github.com/Murderd1/UniXNU-sheng/actions/runs/42829591813).
+Its tools step failed before compilation because Homebrew resolved ipsw as a
+cask whose zap stanza was incompatible with the runner. Both tools steps now
+select the official formula explicitly with `brew install --formula`.

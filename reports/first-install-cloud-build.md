@@ -58,8 +58,15 @@ The new run reuses the installation seed cache.
 This retry passed Mesa patch application and GPU/audio runtime generation, then
 failed because Wi-Fi firmware was a local-only input. All three original Wi-Fi
 file identities were recovered from an immutable public source and verified
-locally. The next boot run is
-[42815226492](https://github.com/Murderd1/UniXNU-sheng/actions/runs/42815226492).
+locally. Run [42815226492](https://github.com/Murderd1/UniXNU-sheng/actions/runs/42815226492)
+verified all firmware inputs, then exposed a missing output parent in the early
+host fixture. After creating the parent, run
+[42816370728](https://github.com/Murderd1/UniXNU-sheng/actions/runs/42816370728)
+reached an outdated whitelist assertion: the test rejected `join.txt`, which
+the production reader already accepts for optional unattended testing. The
+fixture now exercises all five existing names, rejects unknown/traversal names,
+creates its own output parents and retains sanitizer/assertion stderr. No
+production Wi-Fi behavior was changed.
 
 The userdata artifact ZIP and extracted image pass local SHA-256 checks. A
 streaming sparse decoder also verifies the SHNGROOT header, each original

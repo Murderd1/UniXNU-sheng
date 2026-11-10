@@ -91,3 +91,12 @@ Before any installation, compare the actual userdata GPT start/end and logical
 block size with the artifact report, check the boot partition size and retain
 the original Android boot images and user-file backup. Successful image
 assembly does not establish device boot or daily-use compatibility.
+
+## Cloud host capacity
+
+Run [42824136714](https://github.com/Murderd1/UniXNU-sheng/actions/runs/42824136714)
+was not acquired by a hosted runner after repeated attempts. GitHub annotations
+report macOS ARM capacity constraints; the job executed no build steps. The
+workflow now offers the standard macos-26-intel host and resolves Homebrew
+tool paths from its installed prefixes. This changes the build host only.
+The iPadOS profile, component pins and preserved installation seed are unchanged.

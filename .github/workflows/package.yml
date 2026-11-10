@@ -13,6 +13,11 @@ on:
         type: choice
         options: ["27", "26", "17"]
         default: "27"
+      runner:
+        description: "Standard macOS build host; Intel is a fallback when ARM capacity is unavailable"
+        type: choice
+        options: ["macos-26", "macos-26-intel"]
+        default: "macos-26"
       init_data:
         description: "Create a NEW installation seed if no saved seed exists (iPadOS 27 only)"
         type: boolean
@@ -34,7 +39,7 @@ concurrency:
 jobs:
   userdata:
     if: inputs.os == '27' && inputs.init_data
-    runs-on: macos-26
+    runs-on: ${{ inputs.runner || 'macos-26' }}
     timeout-minutes: 180
     steps:
       - uses: actions/checkout@v4
@@ -63,7 +68,7 @@ jobs:
             UniXNU/out/sheng/*/*/userdata/first-install.json
             UniXNU/out/sheng/*/*/userdata/userdata-root.json
   package:
-    runs-on: macos-26
+    runs-on: ${{ inputs.runner || 'macos-26' }}
     timeout-minutes: 360
     steps:
       - uses: actions/checkout@v4
@@ -84,11 +89,14 @@ jobs:
       - name: tools
         run: |
           brew install dtc llvm lld cmake mtools ninja glslang shaderc spirv-tools bison pkgconf rustup blacktop/tap/ipsw
+          llvm_bin="$(brew --prefix llvm)/bin"
+          lld_bin="$(brew --prefix lld)/bin"
+          bison_bin="$(brew --prefix bison)/bin"
           {
             echo "$HOME/.cargo/bin"
-            echo "/opt/homebrew/opt/llvm/bin"
-            echo "/opt/homebrew/opt/lld/bin"
-            echo "/opt/homebrew/opt/bison/bin"
+            echo "$llvm_bin"
+            echo "$lld_bin"
+            echo "$bison_bin"
           } >> "$GITHUB_PATH"
           rustup toolchain install 1.98.0 --profile minimal --component rust-src
           # Fail fast, naming the tool, before forty minutes of build.
@@ -98,7 +106,7 @@ jobs:
             command -v "$t" >/dev/null || { echo "missing tool: $t"; ok=0; }
           done
           for t in lld-link llvm-lib llvm-rc llvm-nm llvm-objcopy; do
-            [ -f "/opt/homebrew/opt/llvm/bin/$t" ] || [ -f "/opt/homebrew/opt/lld/bin/$t" ] || { echo "missing tool: $t"; ok=0; }
+            [ -f "$llvm_bin/$t" ] || [ -f "$lld_bin/$t" ] || { echo "missing tool: $t"; ok=0; }
           done
           [ "$ok" = 1 ]
       - name: platform seed
@@ -198,6 +206,7 @@ jobs:
           if-no-files-found: ignore
           path: |
             UniXNU/out/sheng/*/*/logs/*.log
+            device/drivers/Ath12kWifi/out/wpa-ios/build.log
       - name: images
         uses: actions/upload-artifact@v4
         with:

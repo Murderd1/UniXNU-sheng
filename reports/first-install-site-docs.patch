@@ -1,8 +1,8 @@
 diff --git a/docs/porting/packaging.md b/docs/porting/packaging.md
-index 380307a..91c7e5b 100644
+index 380307a..7577db1 100644
 --- a/docs/porting/packaging.md
 +++ b/docs/porting/packaging.md
-@@ -164,3 +164,19 @@ For the 24A446 fileset, `regression_policy` bounds the unresolved references by
+@@ -164,3 +164,24 @@ For the 24A446 fileset, `regression_policy` bounds the unresolved references by
  original kernel address and importing component. New gaps fail packaging even
  with `--allow-missing`; this check does not qualify the remaining experimental
  paths or replace a device boot test.
@@ -22,11 +22,16 @@ index 380307a..91c7e5b 100644
 +the boot image against the target boot partition size before any installation.
 +Retain the original Data seed and platform seed for later builds. Host
 +verification does not establish a successful device boot.
++
++The sheng fork workflow accepts standard `macos-26` and `macos-26-intel` build
++hosts. It resolves Homebrew tool paths with `brew --prefix`; the selected
++iPadOS target and preserved installation seed are independent of host CPU.
++The Intel host is a fallback when hosted ARM capacity is unavailable.
 diff --git a/docs/zh/porting/packaging.md b/docs/zh/porting/packaging.md
-index 1487845..40efaf1 100644
+index 1487845..3fca1ff 100644
 --- a/docs/zh/porting/packaging.md
 +++ b/docs/zh/porting/packaging.md
-@@ -135,3 +135,16 @@ seed 备份下载；请自行长期保存，Actions 缓存不能作为永久备
+@@ -135,3 +135,20 @@ seed 备份下载；请自行长期保存，Actions 缓存不能作为永久备
  
  24A446 的 `regression_policy` 按原内核地址和导入组件限制未解析引用；即使启用
  `--allow-missing`，新增缺口也会使打包失败。这不代表剩余实验路径已验证，仍需上机启动测试。
@@ -43,3 +48,7 @@ index 1487845..40efaf1 100644
 +写为零，刷入会清除 Android 用户数据。安装前应将平板实际 GPT 几何与
 +`first-install.json` 比较，并核对启动镜像是否适合实际 boot 分区。保留原始 Data
 +种子和平台种子供后续构建使用。主机验证不代表已经通过平板启动验证。
++
++sheng 分支工作流支持标准 `macos-26` 和 `macos-26-intel` 构建环境，
++使用 `brew --prefix` 获取工具路径。目标 iPadOS 配置和原安装种子
++与构建机器的 CPU 无关；ARM 云端资源不足时可尝试 Intel 环境。

@@ -55,7 +55,17 @@ The boot retry pins personal UniXNU fork revision
 The new run reuses the installation seed cache.
 
 [Boot retry](https://github.com/Murderd1/UniXNU-sheng/actions/runs/42807344441).
-Its final result and local download verification remain to be recorded.
+This retry passed Mesa patch application and GPU/audio runtime generation, then
+failed because Wi-Fi firmware was a local-only input. All three original Wi-Fi
+file identities were recovered from an immutable public source and verified
+locally. The next boot run is
+[42815226492](https://github.com/Murderd1/UniXNU-sheng/actions/runs/42815226492).
+
+The userdata artifact ZIP and extracted image pass local SHA-256 checks. A
+streaming sparse decoder also verifies the SHNGROOT header, each original
+window, both existing signed policy headers, the complete reconstructed block
+tables and explicit zero fills after the root. The decoded partition size
+matches the cloud report. No 249 GB raw partition file is created.
 
 ## Device checkpoints
 

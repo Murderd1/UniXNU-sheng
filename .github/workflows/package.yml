@@ -185,6 +185,15 @@ jobs:
           path: |
             UniXNU/out/sheng/*/*/runtime/data.dbr
             UniXNU/out/sheng/*/*/runtime/inputs.json
+      - name: build diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-logs-${{ inputs.os }}
+          retention-days: 1
+          if-no-files-found: ignore
+          path: |
+            UniXNU/out/sheng/*/*/logs/*.log
       - name: images
         uses: actions/upload-artifact@v4
         with:

@@ -112,6 +112,7 @@ jobs:
       - name: Wi-Fi firmware inputs
         run: |
           python3 device/scripts/fetch-wifi-firmware.py
+          mkdir -p device/build
           python3 device/scripts/check-wifi-firmware.py
       - name: seed cache identity
         id: seed-key

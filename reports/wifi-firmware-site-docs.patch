@@ -1,8 +1,8 @@
 diff --git a/docs/drivers/ath12k-wifi.md b/docs/drivers/ath12k-wifi.md
-index c6bc39d..556fb7e 100644
+index c6bc39d..bdbc5e4 100644
 --- a/docs/drivers/ath12k-wifi.md
 +++ b/docs/drivers/ath12k-wifi.md
-@@ -89,3 +89,14 @@ Device verification covers Wi-Fi toggling, SSID scanning, WPA2 association,
+@@ -89,3 +89,19 @@ Device verification covers Wi-Fi toggling, SSID scanning, WPA2 association,
  DHCP, traffic and join-result delivery. Current device checks pending:
  cancellation/timeout completion, signal display, Data firmware startup,
  throughput, jitter and heat. See the [sheng network record](/devices/sheng#network).
@@ -17,11 +17,16 @@ index c6bc39d..556fb7e 100644
 +including `amss2.bin` and the optional unattended-test `join.txt`, and rejects
 +unknown names and path traversal. It prints sanitizer and assertion diagnostics
 +on failure. This fixture does not perform radio or network operations.
++
++The sheng userspace builder resolves the component's locked sources with
++`tools/fetch-sources.py` before building the supplicant. A clean checkout has
++no `deps/` tree; `--check` alone cannot prepare it. The package workflow builds
++and signs the iOS Wi-Fi layer before the long runtime preparation step.
 diff --git a/docs/zh/drivers/ath12k-wifi.md b/docs/zh/drivers/ath12k-wifi.md
-index 1a4daa2..21dbad4 100644
+index 1a4daa2..7a75adc 100644
 --- a/docs/zh/drivers/ath12k-wifi.md
 +++ b/docs/zh/drivers/ath12k-wifi.md
-@@ -86,3 +86,12 @@ python3 tools/check-mainline-link.py --build-report FILE --kernel FILE
+@@ -86,3 +86,17 @@ python3 tools/check-mainline-link.py --build-report FILE --kernel FILE
  设备已验证 Wi-Fi 开关、SSID 扫描、WPA2 关联、DHCP、网络流量和
  连接结果通知。当前待实测：取消和超时收尾、信号显示、Data 固件
  启动，以及吞吐、抖动和发热。详见[sheng 网络记录](/zh/devices/sheng#network)。
@@ -34,3 +39,8 @@ index 1a4daa2..21dbad4 100644
 +sheng 固件读取主机测试覆盖现有白名单，包括 `amss2.bin` 和可选的
 +无人值守测试文件 `join.txt`，并拒绝未知文件名和路径穿越。失败时保留
 +内存检查与断言诊断。该测试不执行无线电或网络操作。
++
++sheng 用户态构建器会先调用组件的 `tools/fetch-sources.py`，获取并验证
++固定版本的依赖，然后编译 supplicant。干净检出没有 `deps/`，单独执行
++`--check` 不会准备源码。打包流程在耗时的运行环境准备前先编译并签名
++iOS Wi-Fi 用户态层。

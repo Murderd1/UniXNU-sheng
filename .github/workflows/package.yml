@@ -114,6 +114,9 @@ jobs:
           python3 device/scripts/fetch-wifi-firmware.py
           mkdir -p device/build
           python3 device/scripts/check-wifi-firmware.py
+      - name: Wi-Fi userspace preflight
+        if: inputs.os == '27'
+        run: python3 device/scripts/build-wifi-userspace.py device/build/wifi-preflight ios27
       - name: seed cache identity
         id: seed-key
         env:

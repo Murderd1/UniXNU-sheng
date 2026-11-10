@@ -71,7 +71,12 @@ production Wi-Fi behavior was changed.
 Run [42817825877](https://github.com/Murderd1/UniXNU-sheng/actions/runs/42817825877)
 passes the early Wi-Fi firmware-input step, including the existing ASan/UBSan
 reader fixture, and enters the full package step with the preserved Data seed.
-Its final boot-package result is pending.
+It generated the GPU/audio runtime but failed because the supplicant preparation
+checks locked inputs without fetching them: `Ath12kWifi/deps/linux` was absent.
+The board builder now runs the component's existing `tools/fetch-sources.py`
+before `tools/build-supplicant.py`. An early workflow step builds and signs
+the Wi-Fi userspace layer before the long runtime build. Source pins are
+unchanged; no wireless driver or authentication behavior is changed.
 
 The userdata artifact ZIP and extracted image pass local SHA-256 checks. A
 streaming sparse decoder also verifies the SHNGROOT header, each original

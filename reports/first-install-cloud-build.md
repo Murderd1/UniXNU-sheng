@@ -106,3 +106,9 @@ The standard Intel host was allocated immediately in run
 Its tools step failed before compilation because Homebrew resolved ipsw as a
 cask whose zap stanza was incompatible with the runner. Both tools steps now
 select the official formula explicitly with `brew install --formula`.
+
+Run [42831462960](https://github.com/Murderd1/UniXNU-sheng/actions/runs/42831462960)
+still parsed the invalid cask even with --formula. The workflow now uses
+`scripts/install-ipsw.py`: official ipsw 3.1.743 release archives, architecture
+selection and the SHA-256 values published in the official Homebrew formula.
+It extracts only the regular ipsw executable and checks its version.

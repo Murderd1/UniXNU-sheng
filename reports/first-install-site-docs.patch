@@ -1,8 +1,8 @@
 diff --git a/docs/porting/packaging.md b/docs/porting/packaging.md
-index 380307a..7577db1 100644
+index 380307a..8c99136 100644
 --- a/docs/porting/packaging.md
 +++ b/docs/porting/packaging.md
-@@ -164,3 +164,24 @@ For the 24A446 fileset, `regression_policy` bounds the unresolved references by
+@@ -164,3 +164,29 @@ For the 24A446 fileset, `regression_policy` bounds the unresolved references by
  original kernel address and importing component. New gaps fail packaging even
  with `--allow-missing`; this check does not qualify the remaining experimental
  paths or replace a device boot test.
@@ -27,11 +27,16 @@ index 380307a..7577db1 100644
 +hosts. It resolves Homebrew tool paths with `brew --prefix`; the selected
 +iPadOS target and preserved installation seed are independent of host CPU.
 +The Intel host is a fallback when hosted ARM capacity is unavailable.
++
++The fork installs the official `ipsw` 3.1.743 release executable directly,
++verifying the architecture-specific archive against the SHA-256 published
++by its official Homebrew formula. This avoids an invalid same-name cask
++definition on the Intel runner; the command interface is unchanged.
 diff --git a/docs/zh/porting/packaging.md b/docs/zh/porting/packaging.md
-index 1487845..3fca1ff 100644
+index 1487845..fb3c4c1 100644
 --- a/docs/zh/porting/packaging.md
 +++ b/docs/zh/porting/packaging.md
-@@ -135,3 +135,20 @@ seed 备份下载；请自行长期保存，Actions 缓存不能作为永久备
+@@ -135,3 +135,24 @@ seed 备份下载；请自行长期保存，Actions 缓存不能作为永久备
  
  24A446 的 `regression_policy` 按原内核地址和导入组件限制未解析引用；即使启用
  `--allow-missing`，新增缺口也会使打包失败。这不代表剩余实验路径已验证，仍需上机启动测试。
@@ -52,3 +57,7 @@ index 1487845..3fca1ff 100644
 +sheng 分支工作流支持标准 `macos-26` 和 `macos-26-intel` 构建环境，
 +使用 `brew --prefix` 获取工具路径。目标 iPadOS 配置和原安装种子
 +与构建机器的 CPU 无关；ARM 云端资源不足时可尝试 Intel 环境。
++
++该分支直接安装官方 `ipsw` 3.1.743 发布文件，按官方 Homebrew 配方公布
++的 SHA-256 校验对应架构的压缩包，再提取可执行文件。此方式避开
++Intel 构建环境中同名 cask 的无效定义，保留原有命令接口。

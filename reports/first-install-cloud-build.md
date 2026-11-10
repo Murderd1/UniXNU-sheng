@@ -1,0 +1,66 @@
+# First-install cloud build, 2026-11-10
+
+Target: Xiaomi Pad 6S Pro (sheng), reported 12 GB RAM and 256 GB storage,
+unlocked bootloader, first installation. This session builds host files only.
+The target tablet is not connected. No partition has been read or written.
+
+## Sources and commands
+
+The successful userdata job used device revision
+`da0c23d31d0f4922832359937a364a8bc7d9a433` and UniXNU revision
+`82b847c4ac3f68a57024b3082ffa3a03442defd9`, with the pinned
+`ipados-27.0.1-24A446` OS profile. See the exact revision recorded in the
+artifact's `first-install.json` when reproducing this run.
+
+```sh
+python3 device/scripts/check-first-install-userdata.py
+python3 device/scripts/build-first-install-userdata.py --unixnu UniXNU
+```
+
+[Successful userdata job](https://github.com/Murderd1/UniXNU-sheng/actions/runs/42804909759/job/129791455420).
+The overall run is marked failed because its separate boot-package job failed.
+
+## Userdata result
+
+Seven host tests pass on the macOS runner. Both original policy signatures,
+raw image digests and reconstructed block-table digests match. The existing
+signed headers and keys are preserved. No private signing key is required.
+
+| Output | Bytes | SHA-256 |
+| --- | ---: | --- |
+| Artifact ZIP | 10,744,408,854 | `2046a85d535c36f8306782c92be24f5a5384d263a8b6a59e69b03b31d3567250` |
+| `userdata-first-install.img` | 14,732,319,540 | `1dad4810d16d9fc1b4306879c892b7417bf19fddcd97203dae0c0b5305b27bf6` |
+
+The Android sparse image expands to 249,497,890,816 bytes. It includes OS,
+SystemOS, OS.vroot and SystemOS.vroot, then explicit zero fills through the
+remaining userdata partition. Flashing it erases Android user data.
+
+Root manifest SHA-256:
+`49e2593b7c7f4b2c17e47a15695fec88748a673cc01b129602bb8346c7342ae2`.
+
+## Boot-package failures and repairs
+
+The first clean checkout failed because the QcomDwc3 gitlink named unavailable
+revision `0dd83827279ee070dca7ddb486c90365567cc99d`. The fork selects published
+revision `e4efe95c903a737e0f5955e5b50a8fb4d2a7d718`. The board USB gate and
+default cable role selection match its interface. Forced role diagnostic
+arguments retain their `sheng-` prefix in this published driver.
+
+The next boot build created and backed up the first-install Data seed, then
+failed applying `turnip-frame-diagnostics.patch`: the new diagnostic header
+diff lacked `new file mode 100644`. An isolated clean repository reproduces
+the failure; the metadata repair passes application and reverse checking.
+The boot retry pins personal UniXNU fork revision
+`3e239995903ae59a2ea506c52c8e31341d357044`, based on the original tool revision.
+The new run reuses the installation seed cache.
+
+[Boot retry](https://github.com/Murderd1/UniXNU-sheng/actions/runs/42807344441).
+Its final result and local download verification remain to be recorded.
+
+## Device checkpoints
+
+Boot, storage mount, display, touch input and GPU: not tested in this session.
+Before any installation, compare the actual userdata GPT start/end and logical
+block size with the artifact report, check the boot partition size and retain
+the original Android boot images and user-file backup. Successful image
+assembly does not establish device boot or daily-use compatibility.

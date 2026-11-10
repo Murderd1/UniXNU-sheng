@@ -173,6 +173,13 @@ kind = "source"
 reference = "board.toml"
 result = "[os_overrides.\"macos-27.3-26C5035r\".payload.runtime] data_seed_tool selects UniXNU scripts/make-macos-data-seed.py, which copies the system volume's Data template with owners as root."
 
+[[area.evidence]]
+kind = "host"
+reference = "https://github.com/Murderd1/UniXNU-sheng/actions/runs/42804909759/job/129791455420"
+command = "python3 device/scripts/check-first-install-userdata.py && python3 device/scripts/build-first-install-userdata.py --unixnu UniXNU"
+revision = "da0c23d31d0f4922832359937a364a8bc7d9a433"
+result = "macOS: seven checks pass; original OS and SystemOS image hashes, existing policy signatures and reconstructed hash tables match. A 14732319540-byte sparse image expands to 249497890816 bytes with explicit zero fills after the root. No tablet was accessed."
+
 [[area]]
 id = "display"
 status = "implemented"

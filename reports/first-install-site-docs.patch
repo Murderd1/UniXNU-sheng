@@ -1,0 +1,45 @@
+diff --git a/docs/porting/packaging.md b/docs/porting/packaging.md
+index 380307a..91c7e5b 100644
+--- a/docs/porting/packaging.md
++++ b/docs/porting/packaging.md
+@@ -164,3 +164,19 @@ For the 24A446 fileset, `regression_policy` bounds the unresolved references by
+ original kernel address and importing component. New gaps fail packaging even
+ with `--allow-missing`; this check does not qualify the remaining experimental
+ paths or replace a device boot test.
++
++## First-install userdata in a device fork
++
++A boot package does not include the OS and SystemOS storage windows. The sheng
++fork's `scripts/build-first-install-userdata.py --unixnu ../UniXNU` builds these
++with the selected OS profile and restores their ordered verification tables.
++It verifies the existing signed policy headers and requires the reconstructed
++image and table hashes to match; it does not create a new signing identity.
++
++For iPadOS 27, selecting `init_data` in that fork also uploads the separate
++`first-install-userdata-27` artifact. The Android sparse image explicitly writes
++zeros through the rest of userdata and erases Android user data on flash.
++Compare the target's actual GPT geometry with `first-install.json`, and check
++the boot image against the target boot partition size before any installation.
++Retain the original Data seed and platform seed for later builds. Host
++verification does not establish a successful device boot.
+diff --git a/docs/zh/porting/packaging.md b/docs/zh/porting/packaging.md
+index 1487845..40efaf1 100644
+--- a/docs/zh/porting/packaging.md
++++ b/docs/zh/porting/packaging.md
+@@ -135,3 +135,16 @@ seed 备份下载；请自行长期保存，Actions 缓存不能作为永久备
+ 
+ 24A446 的 `regression_policy` 按原内核地址和导入组件限制未解析引用；即使启用
+ `--allow-missing`，新增缺口也会使打包失败。这不代表剩余实验路径已验证，仍需上机启动测试。
++
++## 设备 fork 的首次安装 userdata
++
++启动包不包含存储中的 OS 和 SystemOS 窗口。sheng fork 的
++`scripts/build-first-install-userdata.py --unixnu ../UniXNU` 使用所选系统配置构建
++这两个窗口，并恢复其有序校验表。脚本验证已有策略头的签名，要求重建出的镜像及
++校验表哈希与签名内容一致，不生成新的签名身份。
++
++在该 fork 的 iPadOS 27 工作流中选择 `init_data`，还会生成单独的
++`first-install-userdata-27` 产物。Android sparse 镜像会把 userdata 其余空间明确
++写为零，刷入会清除 Android 用户数据。安装前应将平板实际 GPT 几何与
++`first-install.json` 比较，并核对启动镜像是否适合实际 boot 分区。保留原始 Data
++种子和平台种子供后续构建使用。主机验证不代表已经通过平板启动验证。

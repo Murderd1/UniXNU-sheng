@@ -90,6 +90,27 @@ offers the images as the run's artifacts.
 The run installs and asserts its own tools; nothing else is needed on the
 runner.
 
+For a first iPadOS 27 installation, select `init_data`. The workflow also
+builds `first-install-userdata-27` on a separate runner. Its Android sparse
+image contains the unchanged OS and SystemOS windows, their restored signed
+verification tables, and explicit zeros through the end of userdata. Flashing
+it erases Android user data. Compare the target's actual GPT geometry with
+`first-install.json` before use; the capacity label alone is insufficient.
+Keep the separate installation-seed backup and the platform seed for updates.
+An existing installation must not use the first-install userdata image.
+
+To build this image locally after obtaining the pinned UniXNU checkout:
+
+```sh
+python3 scripts/check-first-install-userdata.py
+python3 scripts/build-first-install-userdata.py --unixnu ../UniXNU
+```
+
+The USB submodule uses published revision `e4efe95c903a737e0f5955e5b50a8fb4d2a7d718`.
+The board probe still uses `usb=1`. Forced role diagnostics in this revision
+use `sheng-usb-host` and `sheng-usb-back`; normal cable role selection needs
+neither argument.
+
 ## Documentation
 
 The documentation site is maintained in UniXNU:

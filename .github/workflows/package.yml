@@ -32,6 +32,36 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  userdata:
+    if: inputs.os == '27' && inputs.init_data
+    runs-on: macos-26
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: device
+      - uses: actions/checkout@v4
+        with:
+          repository: UniXNU/UniXNU
+          ref: 82b847c4ac3f68a57024b3082ffa3a03442defd9
+          path: UniXNU
+      - name: root image tools
+        run: brew install blacktop/tap/ipsw
+      - name: verify first-install builder
+        run: python3 device/scripts/check-first-install-userdata.py
+      - name: build authenticated first-install userdata
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: python3 device/scripts/build-first-install-userdata.py --unixnu UniXNU
+      - uses: actions/upload-artifact@v4
+        with:
+          name: first-install-userdata-27
+          retention-days: 1
+          if-no-files-found: error
+          path: |
+            UniXNU/out/sheng/*/*/userdata/userdata-first-install.img
+            UniXNU/out/sheng/*/*/userdata/first-install.json
+            UniXNU/out/sheng/*/*/userdata/userdata-root.json
   package:
     runs-on: macos-26
     timeout-minutes: 360

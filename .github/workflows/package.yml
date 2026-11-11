@@ -14,10 +14,14 @@ on:
         options: ["27", "26", "17"]
         default: "27"
       runner:
-        description: "Standard macOS build host; Intel is a fallback when ARM capacity is unavailable"
+        description: "Use this Mac or a GitHub-hosted macOS runner"
         type: choice
-        options: ["macos-26", "macos-26-intel"]
-        default: "macos-26"
+        options: ["sheng-build", "macos-26", "macos-26-intel"]
+        default: "sheng-build"
+      check_only:
+        description: "Validate the runner, Rust, SDK and preserved seed without building images"
+        type: boolean
+        default: false
       init_data:
         description: "Create a NEW installation seed if no saved seed exists (iPadOS 27 only)"
         type: boolean
@@ -37,21 +41,55 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  check:
+    if: inputs.check_only
+    runs-on: ${{ inputs.runner == 'sheng-build' && fromJSON('["self-hosted","macOS","ARM64","sheng-build"]') || inputs.runner || 'macos-26' }}
+    timeout-minutes: 10
+    steps:
+      - name: validate build host
+        env:
+          PLATFORM_SEED: ${{ secrets.UNIXNU_UNIQUE_CHIP_ID }}
+        run: |
+          python3 -c 'import sys; assert sys.version_info >= (3, 11), "Python 3.11+ is required"'
+          rustup_bin="$(brew --prefix rustup)/bin"
+          export PATH="$rustup_bin:$PATH"
+          cargo +1.98.0 --version
+          rustc +1.98.0 --version
+          xcodebuild -version
+          xcodebuild -checkFirstLaunchStatus
+          xcrun --sdk iphoneos --show-sdk-path
+          printf 'fn main() { println!("Rust toolchain works"); }\n' > "$RUNNER_TEMP/host-check.rs"
+          rustc +1.98.0 "$RUNNER_TEMP/host-check.rs" -o "$RUNNER_TEMP/host-check"
+          "$RUNNER_TEMP/host-check"
+          printf 'int main(void) { return 0; }\n' > "$RUNNER_TEMP/ios-check.c"
+          xcrun --sdk iphoneos clang -target arm64e-apple-ios27.0 -c "$RUNNER_TEMP/ios-check.c" -o "$RUNNER_TEMP/ios-check.o"
+          python3 - <<'PY'
+          import hashlib, os, pathlib, re
+          assert re.fullmatch(r'[0-9a-fA-F]{8}', os.environ['PLATFORM_SEED']), 'Missing platform seed secret'
+          if os.environ.get('RUNNER_ENVIRONMENT') == 'self-hosted':
+              path = pathlib.Path(os.environ['SHENG_DATA_SEED_PATH'])
+              assert hashlib.sha256(path.read_bytes()).hexdigest() == os.environ['SHENG_DATA_SEED_SHA256'], 'Original Data seed mismatch'
+              print('Original local Data seed verified')
+          PY
   userdata:
-    if: inputs.os == '27' && inputs.init_data
-    runs-on: ${{ inputs.runner || 'macos-26' }}
+    if: inputs.os == '27' && inputs.init_data && !inputs.check_only
+    runs-on: ${{ inputs.runner == 'sheng-build' && fromJSON('["self-hosted","macOS","ARM64","sheng-build"]') || inputs.runner || 'macos-26' }}
     timeout-minutes: 180
     steps:
       - uses: actions/checkout@v4
         with:
           path: device
+          clean: ${{ inputs.runner != 'sheng-build' }}
       - uses: actions/checkout@v4
         with:
           repository: Murderd1/UniXNU
           ref: 3e239995903ae59a2ea506c52c8e31341d357044
           path: UniXNU
+          clean: ${{ inputs.runner != 'sheng-build' }}
       - name: root image tools
-        run: python3 device/scripts/install-ipsw.py --output "$RUNNER_TEMP/unixnu-tools"
+        run: |
+          python3 -c 'import sys; assert sys.version_info >= (3, 11), "Python 3.11+ is required"'
+          python3 device/scripts/install-ipsw.py --output "$RUNNER_TEMP/unixnu-tools"
       - name: verify first-install builder
         run: python3 device/scripts/check-first-install-userdata.py
       - name: build authenticated first-install userdata
@@ -68,33 +106,43 @@ jobs:
             UniXNU/out/sheng/*/*/userdata/first-install.json
             UniXNU/out/sheng/*/*/userdata/userdata-root.json
   package:
-    runs-on: ${{ inputs.runner || 'macos-26' }}
+    if: ${{ !inputs.check_only }}
+    runs-on: ${{ inputs.runner == 'sheng-build' && fromJSON('["self-hosted","macOS","ARM64","sheng-build"]') || inputs.runner || 'macos-26' }}
     timeout-minutes: 360
     steps:
       - uses: actions/checkout@v4
         with:
           path: device
+          clean: ${{ inputs.runner != 'sheng-build' }}
           submodules: recursive
       - uses: actions/checkout@v4
         with:
           repository: Murderd1/UniXNU
           ref: 3e239995903ae59a2ea506c52c8e31341d357044 # Original pinned tools plus the clean-checkout Mesa patch fix
           path: UniXNU
+          clean: ${{ inputs.runner != 'sheng-build' }}
           submodules: recursive
       - name: tools
         run: |
+          brew_bin="$(brew --prefix)/bin"
+          echo "$brew_bin" >> "$GITHUB_PATH"
+          export PATH="$brew_bin:$PATH"
+          python3 -c 'import sys; assert sys.version_info >= (3, 11), "Python 3.11+ is required"'
           brew install --formula dtc llvm lld cmake mtools ninja glslang shaderc spirv-tools bison pkgconf rustup
           python3 device/scripts/install-ipsw.py --output "$RUNNER_TEMP/unixnu-tools"
           export PATH="$RUNNER_TEMP/unixnu-tools:$PATH"
           llvm_bin="$(brew --prefix llvm)/bin"
           lld_bin="$(brew --prefix lld)/bin"
           bison_bin="$(brew --prefix bison)/bin"
+          rustup_bin="$(brew --prefix rustup)/bin"
           {
             echo "$HOME/.cargo/bin"
             echo "$llvm_bin"
             echo "$lld_bin"
             echo "$bison_bin"
+            echo "$rustup_bin"
           } >> "$GITHUB_PATH"
+          export PATH="$rustup_bin:$PATH"
           rustup toolchain install 1.98.0 --profile minimal --component rust-src
           # Fail fast, naming the tool, before forty minutes of build.
           ok=1
@@ -105,6 +153,12 @@ jobs:
           for t in lld-link llvm-lib llvm-rc llvm-nm llvm-objcopy; do
             [ -f "$llvm_bin/$t" ] || [ -f "$lld_bin/$t" ] || { echo "missing tool: $t"; ok=0; }
           done
+          command -v cargo >/dev/null || { echo 'missing tool: cargo (check brew --prefix rustup)/bin in PATH'; ok=0; }
+          command -v rustc >/dev/null || { echo 'missing tool: rustc (check brew --prefix rustup)/bin in PATH'; ok=0; }
+          cargo +1.98.0 --version || { echo 'Rust 1.98.0 cargo is not runnable'; ok=0; }
+          rustc +1.98.0 --version || { echo 'Rust 1.98.0 rustc is not runnable'; ok=0; }
+          xcodebuild -version >/dev/null 2>&1 || { echo 'Full Xcode is required; select it with xcode-select'; ok=0; }
+          xcrun --sdk iphoneos --show-sdk-path >/dev/null 2>&1 || { echo 'iPhoneOS SDK is unavailable; install full Xcode'; ok=0; }
           [ "$ok" = 1 ]
       - name: platform seed
         env:
@@ -126,6 +180,7 @@ jobs:
         with:
           repository: UniXNU/uefi-sheng
           path: uefi-sheng
+          clean: ${{ inputs.runner != 'sheng-build' }}
           submodules: recursive
       - name: seed cache identity
         id: seed-key
@@ -154,6 +209,16 @@ jobs:
           import hashlib, json, os, pathlib, urllib.request
           inputs = json.loads(pathlib.Path(os.environ['GITHUB_EVENT_PATH']).read_text())['inputs']
           path = pathlib.Path('UniXNU/out/sheng/ipados-27.0.1-24A446/sheng_ipados27/runtime/data.dbr')
+          local_seed = os.environ.get('SHENG_DATA_SEED_PATH', '')
+          if local_seed and os.environ.get('RUNNER_ENVIRONMENT') == 'self-hosted':
+              data = pathlib.Path(local_seed).read_bytes()
+              expected = os.environ.get('SHENG_DATA_SEED_SHA256', '')
+              if len(data) > 64 * 1024 * 1024 or len(expected) != 64 or hashlib.sha256(data).hexdigest() != expected:
+                  raise SystemExit('Local original Data seed SHA-256 mismatch')
+              if path.exists() and path.read_bytes() != data:
+                  raise SystemExit('Cached seed differs from the local original installation backup')
+              path.parent.mkdir(parents=True, exist_ok=True)
+              path.write_bytes(data)
           url, digest = inputs.get('data_seed_url', ''), inputs.get('data_seed_sha256', '').lower()
           if url:
               print('::add-mask::' + url)

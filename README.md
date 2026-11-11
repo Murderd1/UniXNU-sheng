@@ -79,7 +79,22 @@ fixed steps, the board.toml keys and the verification the run performs.
 ## Build on GitHub
 
 `.github/workflows/package.yml` runs the same script on a macOS runner and
-offers the images as the run's artifacts.
+offers the images as the run's artifacts. Select `sheng-build` to use the
+registered Apple Silicon self-hosted runner, or select a GitHub-hosted macOS
+runner when this Mac is unavailable. The self-hosted runner requires full
+Xcode, the pinned Rust toolchain and the Homebrew tools listed in the workflow.
+Its service PATH must include Homebrew Python 3.11+ and
+`$(brew --prefix rustup)/bin`; installing a Rust toolchain does not put
+Homebrew's `cargo` shim in `~/.cargo/bin`. The workflow checks these tools
+and the iPhoneOS SDK before packaging.
+
+For this installation, keep the original Data backup outside the runner's
+checkout. Set `SHENG_DATA_SEED_PATH` and `SHENG_DATA_SEED_SHA256` in the
+runner's `.env` to import it with a hash check. A different cached seed stops
+the job. Reuse the original platform seed secret and leave `init_data`
+unchecked for later builds. Self-hosted checkouts preserve build outputs.
+Select `check_only` for a short Actions job that checks the runner, compiles
+Rust and an iOS object, and verifies the saved seed before a full build.
 
 1. Fork this repository and set its `UNIXNU_UNIQUE_CHIP_ID` secret to the
    platform seed of the device.

@@ -24,6 +24,11 @@ kind = "source"
 reference = "board.toml"
 result = "Implementation and configuration described in this section"
 
+[[area.evidence]]
+kind = "source"
+reference = ".github/workflows/package.yml"
+result = "Run 42836306639 installed Rust 1.98.0 but failed at the Adreno Metal bridge because Homebrew rustup's cargo and rustc shims under brew --prefix rustup/bin were absent from PATH. The workflow now exports that path, checks cargo and rustc before packaging, and defaults to this repository's sheng-build macOS ARM64 self-hosted runner while retaining hosted macOS options."
+
 
 [[area.evidence]]
 kind = "source"

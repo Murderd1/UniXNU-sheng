@@ -2,6 +2,7 @@
 """Download the requested sheng fastboot archive with resumable HTTP ranges."""
 import argparse
 import concurrent.futures
+import fcntl
 import hashlib
 import json
 import os
@@ -19,6 +20,11 @@ directory = ROOT / '.cache/firmware/sheng'
 BOARD = Path(os.environ.get('UNIXNU_DEVICE') or ROOT) / 'board.toml'
 image = tomllib.load(open(BOARD, 'rb'))['firmware']['image']
 URL, MD5 = image['url'], image['md5']
+# One writer owns the archive and resume metadata, including a manual prefetch
+# racing the packaging preflight. A waiter rechecks the verified outputs.
+directory.mkdir(parents=True, exist_ok=True)
+download_lock = (directory / '.download.lock').open('a')
+fcntl.flock(download_lock, fcntl.LOCK_EX)
 retained = directory / 'porting-inputs.json'
 if retained.is_file():
     import json
@@ -36,7 +42,7 @@ target = directory / URL.rsplit('/', 1)[1]
 partial = target.with_suffix('.tgz.part')
 state_path = target.with_suffix('.tgz.ranges.json')
 request = urllib.request.Request(URL, headers={'Range': 'bytes=0-0'})
-with urllib.request.urlopen(request, timeout=30) as response:
+with urllib.request.urlopen(request, timeout=60) as response:
     match = re.fullmatch(r'bytes 0-0/(\d+)', response.headers.get('Content-Range', ''))
     if response.status != 206 or not match or response.read() != b'\x1f':
         raise SystemExit('Expected a ranged gzip response; refusing a whole-body fallback')
@@ -70,7 +76,7 @@ def persist():
 def fetch(index):
     begin = index * chunk_size
     end = min(size, begin + chunk_size)
-    for attempt in range(4):
+    for attempt in range(8):
         if stop.is_set():
             raise RuntimeError('Download cancelled after another range failed')
         try:
@@ -81,12 +87,12 @@ def fetch(index):
             request = urllib.request.Request(URL, headers=headers)
             digest = hashlib.sha256()
             position = begin
-            with urllib.request.urlopen(request, timeout=30) as response:
+            with urllib.request.urlopen(request, timeout=60) as response:
                 if response.status != 206 or response.headers.get('Content-Range') != f'bytes {begin}-{end - 1}/{size}':
                     raise RuntimeError('Range response does not match the requested extent')
                 while position < end:
-                    if time.monotonic() - request_started > 45:
-                        raise TimeoutError('Slow range exceeded its 45-second attempt budget')
+                    if time.monotonic() - request_started > 90:
+                        raise TimeoutError('Slow range exceeded its 90-second attempt budget')
                     blob = response.read1(min(256 * 1024, end - position))
                     if not blob:
                         raise RuntimeError('Truncated range response')
@@ -101,7 +107,7 @@ def fetch(index):
                     persist()
             return end - begin
         except Exception:
-            if attempt == 3:
+            if attempt == 7:
                 stop.set()
                 raise
             time.sleep(0.5 * (attempt + 1))

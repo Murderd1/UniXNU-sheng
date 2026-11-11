@@ -83,7 +83,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: Murderd1/UniXNU
-          ref: 3e239995903ae59a2ea506c52c8e31341d357044
+          ref: 78f3defa1e4ab60b4fb89b69e08fc3c894baa85e
           path: UniXNU
           clean: ${{ inputs.runner != 'sheng-build' }}
       - name: root image tools
@@ -109,6 +109,9 @@ jobs:
     if: ${{ !inputs.check_only }}
     runs-on: ${{ inputs.runner == 'sheng-build' && fromJSON('["self-hosted","macOS","ARM64","sheng-build"]') || inputs.runner || 'macos-26' }}
     timeout-minutes: 360
+    env:
+      RUSTUP_TOOLCHAIN: "1.98.0"
+      CARGO_BUILD_JOBS: "4"
     steps:
       - uses: actions/checkout@v4
         with:
@@ -118,31 +121,26 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: Murderd1/UniXNU
-          ref: 3e239995903ae59a2ea506c52c8e31341d357044 # Original pinned tools plus the clean-checkout Mesa patch fix
+          ref: 78f3defa1e4ab60b4fb89b69e08fc3c894baa85e # Tools and source pins verified by the complete local iPadOS 27 build
           path: UniXNU
           clean: ${{ inputs.runner != 'sheng-build' }}
           submodules: recursive
       - name: tools
         run: |
           brew_bin="$(brew --prefix)/bin"
-          echo "$brew_bin" >> "$GITHUB_PATH"
           export PATH="$brew_bin:$PATH"
-          python3 -c 'import sys; assert sys.version_info >= (3, 11), "Python 3.11+ is required"'
-          brew install --formula dtc llvm lld cmake mtools ninja glslang shaderc spirv-tools bison pkgconf rustup
+          brew install --formula python@3.13 dtc llvm lld cmake mtools ninja glslang shaderc spirv-tools bison pkgconf rustup
+          python_bin="$(brew --prefix python@3.13)/libexec/bin"
+          export PATH="$python_bin:$PATH"
+          python3 -c 'import sys; assert sys.version_info[:2] == (3, 13), "Python 3.13 is required"'
           python3 device/scripts/install-ipsw.py --output "$RUNNER_TEMP/unixnu-tools"
-          export PATH="$RUNNER_TEMP/unixnu-tools:$PATH"
           llvm_bin="$(brew --prefix llvm)/bin"
           lld_bin="$(brew --prefix lld)/bin"
           bison_bin="$(brew --prefix bison)/bin"
           rustup_bin="$(brew --prefix rustup)/bin"
-          {
-            echo "$HOME/.cargo/bin"
-            echo "$llvm_bin"
-            echo "$lld_bin"
-            echo "$bison_bin"
-            echo "$rustup_bin"
-          } >> "$GITHUB_PATH"
-          export PATH="$rustup_bin:$PATH"
+          # Match the local build: Apple clang stays ahead of the keg-only LLVM tools.
+          export PATH="$python_bin:$rustup_bin:$bison_bin:$RUNNER_TEMP/unixnu-tools:$brew_bin:/usr/bin:/bin:/usr/sbin:/sbin:$llvm_bin:$lld_bin"
+          echo "PATH=$PATH" >> "$GITHUB_ENV"
           rustup toolchain install 1.98.0 --profile minimal --component rust-src
           # Fail fast, naming the tool, before forty minutes of build.
           ok=1
@@ -158,6 +156,7 @@ jobs:
           cargo +1.98.0 --version || { echo 'Rust 1.98.0 cargo is not runnable'; ok=0; }
           rustc +1.98.0 --version || { echo 'Rust 1.98.0 rustc is not runnable'; ok=0; }
           xcodebuild -version >/dev/null 2>&1 || { echo 'Full Xcode is required; select it with xcode-select'; ok=0; }
+          xcodebuild -checkFirstLaunchStatus >/dev/null 2>&1 || { echo 'Complete Xcode first launch before building'; ok=0; }
           xcrun --sdk iphoneos --show-sdk-path >/dev/null 2>&1 || { echo 'iPhoneOS SDK is unavailable; install full Xcode'; ok=0; }
           [ "$ok" = 1 ]
       - name: platform seed
@@ -179,6 +178,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: UniXNU/uefi-sheng
+          ref: 66421cb7bb5694843aec8de1ca3d1de4c20cca38
           path: uefi-sheng
           clean: ${{ inputs.runner != 'sheng-build' }}
           submodules: recursive
@@ -247,7 +247,7 @@ jobs:
           if [ "$OS_PROFILE" = 27 ] && [ "$INIT_DATA" = true ]; then
             args+=(--init-data)
           fi
-          scripts/package.sh "${args[@]}"
+          scripts/package.sh "${args[@]}" -j 4
       - uses: actions/cache/save@v4
         if: always() && inputs.os == '27' && steps.data-cache.outputs.cache-hit != 'true' && hashFiles('UniXNU/out/sheng/ipados-27.0.1-24A446/sheng_ipados27/runtime/data.dbr') != ''
         with:

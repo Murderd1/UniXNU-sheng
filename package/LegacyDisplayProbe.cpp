@@ -601,7 +601,9 @@ void busyReport(void *, wait_result_t) {
 void native_legacy_display_late_probe(void) {
     {thread_t thread = nullptr; if (kernel_thread_start(busyReport, nullptr, &thread) == KERN_SUCCESS) thread_deallocate(thread);}
     // First: AppleImage4's start already waits for an IOAESAccelerator, holding its expert lock (SoftwareAesProbe.cpp).
+#if !defined(SHENG_BOARD_MACOS_SERVICES) || SHENG_BOARD_MACOS_SERVICES
     if (sheng_software_aes_probe) sheng_software_aes_probe();
+#endif
     native_keystore_probe();
     sheng_cpufreq_probe();
     sheng_gpu_power_probe();
@@ -609,7 +611,9 @@ void native_legacy_display_late_probe(void) {
     sheng_wifi_probe();
     if (sheng_bluetooth_probe) sheng_bluetooth_probe();
     if (sheng_usb_probe) sheng_usb_probe();
+#if !defined(SHENG_BOARD_MACOS_SERVICES) || SHENG_BOARD_MACOS_SERVICES
     if (sheng_ethernet_probe) sheng_ethernet_probe();
+#endif
     sheng_adsp_probe();
     sheng_battery_probe();
     sheng_audio_probe();

@@ -121,7 +121,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: Murderd1/UniXNU
-          ref: d4b4ae0b1b656331e9ea0dce8a65d29ac26c908f # Tools and source pins verified by the complete local iPadOS 27 build
+          ref: d830d23b0d19c9322d906c21afeca1d6c54aeffe # Upstream tools that stage the Bluetooth and AppSync runtime
           path: UniXNU
           clean: ${{ inputs.runner != 'sheng-build' }}
           submodules: recursive

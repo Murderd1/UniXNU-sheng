@@ -246,6 +246,12 @@ jobs:
           INIT_DATA: ${{ inputs.init_data }}
           OS_PROFILE: ${{ inputs.os }}
         run: |
+          # The arm64e bridge (fat LTO, one codegen unit, std built from source) took over the script's 30 minutes on
+          # the hosted Intel runner (run 43252912479). Only the wait changes; the build is the same.
+          bridge=../UniXNU/scripts/build-adreno-metal-bridge.py
+          [ "$(grep -c 'timeout=1800)' "$bridge")" = 1 ] || { echo 'bridge timeout line not found'; exit 1; }
+          sed -i '' 's/timeout=1800)/timeout=10800)/' "$bridge"
+          grep -q 'timeout=10800)' "$bridge"
           args=(--os "$OS_PROFILE" --uefi ../uefi-sheng)
           if [ "$OS_PROFILE" = 27 ] && [ "$INIT_DATA" = true ]; then
             args+=(--init-data)

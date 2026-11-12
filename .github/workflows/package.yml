@@ -129,7 +129,10 @@ jobs:
         run: |
           brew_bin="$(brew --prefix)/bin"
           export PATH="$brew_bin:$PATH"
-          brew install --formula python@3.13 dtc llvm lld cmake mtools ninja glslang shaderc spirv-tools bison pkgconf rustup
+          formulas="python@3.13 dtc llvm lld cmake mtools ninja glslang shaderc spirv-tools bison pkgconf rustup"
+          # A hosted Intel runner carries python.org's 3.13 links in /usr/local/bin: the formula is poured but its
+          # link fails. Take the links over, then every formula must report installed.
+          brew install --formula $formulas || { brew link --overwrite python@3.13; brew install --formula $formulas; }
           python_bin="$(brew --prefix python@3.13)/libexec/bin"
           export PATH="$python_bin:$PATH"
           python3 -c 'import sys; assert sys.version_info[:2] == (3, 13), "Python 3.13 is required"'

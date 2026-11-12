@@ -564,10 +564,9 @@ keyboard_placement = '__attribute__((section("__DATA,__firmware"))) ' if MACOS e
                                             ','.join(str(b) for b in keyboard_bytes) + '};\n')
 compile_c(board_dir / 'Wn8030Firmware.c', board_dir / 'Wn8030Firmware.o')
 board_objects.append(board_dir / 'Wn8030Firmware.o')
-# Firmware file readers go through the VFS and need BSD flags.
-for stem in ('AdspFirmware', 'BluetoothFirmware'):
-    compile_c(KITS / (stem + '.c'), board_dir / (stem + '.o'), 'bsd/DEVELOPMENT/kern_exec.o.json')
-    board_objects.append(board_dir / (stem + '.o'))
+# The audio DSP's firmware file reader goes through the VFS: BSD flags.
+compile_c(KITS / 'AdspFirmware.c', board_dir / 'AdspFirmware.o', 'bsd/DEVELOPMENT/kern_exec.o.json')
+board_objects.append(board_dir / 'AdspFirmware.o')
 board_objects += [Path(line.split(' ', 1)[1]) for line in run(['python3', ROOT / 'scripts/build-ath12k-wifi.py', WIFI, board_dir / 'ath12k-wifi'],
                                                                     text=True).splitlines() if line.startswith('OBJ ')]
 board_objects += [Path(line.split(' ', 1)[1]) for line in run(['python3', ROOT / 'scripts/build-qca-bluetooth.py', BLUETOOTH,

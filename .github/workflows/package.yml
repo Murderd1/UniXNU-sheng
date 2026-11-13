@@ -121,7 +121,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: Murderd1/UniXNU
-          ref: d830d23b0d19c9322d906c21afeca1d6c54aeffe # Upstream tools that stage the Bluetooth and AppSync runtime
+          ref: d830d23b0d19c9322d906c21afeca1d6c54aeffe # Tools with fixed argument names and complete UEFI drivers
           path: UniXNU
           clean: ${{ inputs.runner != 'sheng-build' }}
           submodules: recursive

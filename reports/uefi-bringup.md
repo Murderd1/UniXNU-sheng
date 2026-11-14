@@ -440,3 +440,38 @@ reference and Android's /dev/block/sda29 symlink. Its last LBA is a dynamic
 placeholder patched to NUM_DISK_SECTORS-6, not the current device endpoint.
 Android denies sysfs geometry reads. This factory comparison is supporting
 host evidence, not an independent live GPT read.
+
+
+## Controlled probe: photographed UEFI exception
+
+The owner supplied IMG_20261114_172028.jpg after selecting the controlled
+root diagnostic. Its SHA-256 is
+`6fa3316149cbd1d53f2c2b742890b8c6b034f6c4b1ebc9050f147d3282dd6b67`;
+the original and upright copy are retained with the exact artifact. The PDB
+path includes run 43578621387. The visible page contains ELR `0xc239f084`,
+SP `0xa7649d60`, ESR `0x02000000` (EC 0, IL 1), FAR 0, a stack dump and
+`Recursive exception occurred while dumping the CPU state`. The original
+first exception header and complete [0] module path are outside the visible
+portion. No NATIVE_UFS root-check fields, root mount or launchd result appear.
+
+The pinned Mu handler obtains [0] from ELR and subsequent module names from
+its frame/LR walk. The visible [1] BdsDxe PDB therefore identifies a backtrace
+module, not necessarily the faulting code. EC 0 is an uncategorized instruction
+exception; FAR 0 is not evidence of a null data access. The recursive branch
+prints one message and stops, so page position alone does not identify another
+complete exception context.
+
+Actual-FD disassembly provides a strong candidate: DarwinBoot's terminal
+handoff contains `tlbi vmalle1` at RVA 0x6f084, matching the photographed ELR
+for an inferred image base of 0xc2330000. It follows the SCTLR_EL1 MMU/cache
+clear and ISB, before the branch to XNU. Several visible registers fit that
+sequence. This is a candidate localization; a recorded runtime image base
+and the original exception header are still needed. Parameter length is 795
+bytes, within the documented 1000-byte contract and the loader's bounded
+1024-byte command-line buffer. No length overflow has been established.
+
+Follow the debugging guide's single-change/evidence procedure next. Preserve
+this failed artifact and the separately accepted stage-3 baseline. Diagnose
+the loader handoff and preserve the first exception report before changing
+TLBI/MMU behavior or installing a root image. The current photograph does not
+qualify probe 10 execution or identify a root-manifest failure.

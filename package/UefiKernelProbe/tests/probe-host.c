@@ -40,6 +40,7 @@ static int null_diagnostic, null_loader, no_input, fail_wait, zero_events;
 static jmp_buf escape;
 static EFI_INPUT_KEY keys[32];
 static unsigned key_count, key_index, event_count, stop_events;
+static unsigned scenario;
 static int draining;
 
 #define CHECK(x) do { if (!(x)) { fprintf(stderr,"check failed: %s:%d: %s\n",__FILE__,__LINE__,#x); exit(1); } } while (0)
@@ -131,6 +132,7 @@ static EFI_STATUS EFIAPI read_key(EFI_SIMPLE_TEXT_INPUT_PROTOCOL *self, EFI_INPU
 
 static void initialize(void) {
   UINTN i; CHECK(allocations==frees); CHECK(opened==closed);
+  scenario++;
   memset(&services,0,sizeof(services)); memset(&system_table,0,sizeof(system_table));
   memset(&input,0,sizeof(input)); memset(&fs,0,sizeof(fs)); memset(&block,0,sizeof(block));
   memset(&media,0,sizeof(media)); memset(&root,0,sizeof(root)); memset(files,0,sizeof(files));
@@ -157,7 +159,21 @@ static void initialize(void) {
   system_table.ConIn=&input; gBS=&services; gST=&system_table;
 }
 static void rejected(void) { Snapshot(); CHECK(!CanBoot()); CHECK(BootFullKernel()==EFI_NOT_READY && boot_calls==0); }
-static void ready(void) { Snapshot(); CHECK(CanBoot()); }
+static void ready(void) {
+  UINTN i;
+  Snapshot();
+  if(!CanBoot()) {
+    fprintf(stderr,"ready scenario=%u: arguments=%u verified=%u attempted=%u diagnostic=%llx status=%llx range=%llx state=%u flags=%x volume=%p loader=%llx volume_status=%llx\n",
+            scenario,(unsigned)mArgumentsSafe,(unsigned)mVerifiedVolume,(unsigned)mBootAttempted,
+            (unsigned long long)mDiagnosticStatus,(unsigned long long)mDiagnostic.Status,
+            (unsigned long long)mDiagnostic.RangeStatus,(unsigned)mDiagnostic.State,
+            (unsigned)mDiagnostic.Flags,mDiagnostic.VolumeHandle,
+            (unsigned long long)mLoaderStatus,(unsigned long long)mVolumeStatus);
+    for(i=0;i<PROBE_FILE_COUNT;i++) fprintf(stderr,"file[%u]: status=%llx bytes=%llu\n",(unsigned)i,
+      (unsigned long long)mFiles[i].Status,(unsigned long long)mFiles[i].Bytes);
+  }
+  CHECK(CanBoot());
+}
 static void push(UINT16 scan, CHAR16 ch) { CHECK(key_count<32); keys[key_count].ScanCode=scan; keys[key_count++].UnicodeChar=ch; }
 static void run_ui(unsigned steps) {
   stop_events=steps; if(no_input) system_table.ConIn=NULL;

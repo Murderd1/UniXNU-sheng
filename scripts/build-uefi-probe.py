@@ -77,6 +77,10 @@ def command(parts, *, cwd=None, log=None, env=None):
             stream.flush()
             result = subprocess.run(parts, cwd=cwd, env=env, stdout=stream, stderr=subprocess.STDOUT)
         if result.returncode:
+            # CI keeps the full log as an artifact; expose the last failure
+            # directly so diagnosis does not require downloading the payload.
+            tail = Path(log).read_text(encoding='utf-8', errors='replace').splitlines()[-60:]
+            print('\n'.join(tail), file=sys.stderr, flush=True)
             raise ProbeError(f'{parts[0]} failed ({result.returncode}); see {log}')
         return ''
     result = subprocess.run(parts, cwd=cwd, env=env, capture_output=True, text=True)

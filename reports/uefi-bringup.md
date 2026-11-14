@@ -237,3 +237,10 @@ The application stays visible without an automatic boot or shutdown. A
 separate physical confirmation can hand the verified full kernel and seed to
 the matching DarwinBoot revision. These are implementation details, not device
 success evidence; stage 3 remains unpassed until actual kernel observations.
+
+Run 43568622655 stopped in the native macOS application host check at the
+positive CanBoot gate; no new firmware or boot image was produced. Windows
+MSVC and native Clang simulations passed. The host check now prints every
+boot gate and file status on a positive-case failure. The workflow runs it
+before large input downloads, and failed logged commands expose their tail.
+No boot gate or device acceptance criterion was relaxed.

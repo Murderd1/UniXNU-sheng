@@ -87,6 +87,17 @@ jobs:
           done
       - name: offline probe contract checks
         run: python3 probe-sources/device/scripts/build-uefi-probe.py --self-test
+      - uses: actions/checkout@v4
+        if: inputs.stage == 'full' || github.event_name == 'push'
+        with:
+          repository: microsoft/mu_basecore
+          ref: cfb93724a06ff86ff5ba971413368a7809ee42a5
+          path: probe-host-headers
+          submodules: false
+      - name: full-kernel probe host checks before large downloads
+        if: inputs.stage == 'full' || github.event_name == 'push'
+        run: |
+          python3 probe-sources/device/scripts/check-uefi-kernel-probe.py --edk2 probe-host-headers --unixnu probe-sources/UniXNU --cc cc --aarch64-cc clang
       - name: retrieve audited complete package
         if: inputs.stage == 'full' || github.event_name == 'push'
         env:

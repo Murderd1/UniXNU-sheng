@@ -306,7 +306,8 @@ int main(void) {
   initialize(); mTestRootReadonly=TRUE; rejected();
   // Every omitted or mutated whitelist token rejects the diagnostic handoff.
   {
-    CHAR16 altered[512]; UINTN first,last,tail,length=StrLen(SHENG_ROOT_READONLY_ARGS);
+    CHAR16 altered[1024]; UINTN first,last,tail,length=StrLen(SHENG_ROOT_READONLY_ARGS);
+    CHECK(length==795 && length+20<sizeof(altered)/sizeof(altered[0]));
     first=0;
     while(first<length) {
       last=first; while(last<length && SHENG_ROOT_READONLY_ARGS[last]!=L' ') last++;

@@ -26,7 +26,12 @@ def root_readonly_args():
 def handoff_inputs(report, root_readonly_probe=False):
     result = dict(report)
     result['kernel_args_origin'] = 'Source FAT configuration after the audited repack; not necessarily the effective loader handoff.'
-    result['effective_handoff_args'] = root_readonly_args() if root_readonly_probe else report['kernel_args']
+    arguments = report['kernel_args']
+    if root_readonly_probe:
+        arguments += ' native-ufs-probe=10'
+        if arguments != root_readonly_args():
+            raise ValueError('Root-readonly source arguments differ from the exact Stage 3 baseline plus probe 10')
+    result['effective_handoff_args'] = arguments
     result['trial_mode'] = 'root-readonly-probe' if root_readonly_probe else 'full-kernel'
     return result
 

@@ -375,7 +375,14 @@ def self_test():
                 raise ProbeError(f'{stage}: root-readonly mode must be rejected')
     validate_trial_mode('full', True)
     import uefi_full_trial
-    source_inputs = {'kernel_args': 'source-config-args', 'seed_bytes': 16,
+    suffix = ' native-ufs-probe=10'
+    canonical = uefi_full_trial.root_readonly_args()
+    if not canonical.endswith(suffix):
+        raise ProbeError('Root-readonly canonical arguments must append only probe 10')
+    baseline = canonical[:-len(suffix)]
+    if len(baseline) != 775 or hashlib.sha256(baseline.encode('ascii')).hexdigest() != '452563097518e626be38881b9da8e47b68fb5161608cddfe91088b1691811a03':
+        raise ProbeError('Root-readonly arguments changed the exact successful Stage 3 baseline')
+    source_inputs = {'kernel_args': baseline, 'seed_bytes': 16,
                      'image_sha256': 'intermediate-image', 'volume_sha256': 'unchanged-volume'}
     for readonly in (False, True):
         inputs = uefi_full_trial.handoff_inputs(source_inputs, readonly)
@@ -387,6 +394,17 @@ def self_test():
         config = uefi_full_trial.render_app_config(inputs)
         if ('#define SHENG_FULL_TRIAL_ARGS L' + json.dumps(expected)) not in config or f'#define SHENG_FULL_TRIAL_ROOT_READONLY {int(readonly)}\n' not in config:
             raise ProbeError('Generated app configuration differs from effective handoff')
+    for changed in (baseline + ' ', baseline.replace('wifi=5', 'wifi=0'), baseline + suffix,
+                    baseline.replace('data-persist=0', 'data-persist=2')):
+        drifted = dict(source_inputs, kernel_args=changed)
+        try:
+            uefi_full_trial.handoff_inputs(drifted, True)
+        except ValueError:
+            pass
+        else:
+            raise ProbeError('Root-readonly mode accepted source argument drift')
+        if uefi_full_trial.handoff_inputs(drifted, False)['effective_handoff_args'] != changed:
+            raise ProbeError('Ordinary full mode must preserve its source arguments')
     print('PASS: GUID, standalone dependencies, build ID, checkpoints, stage containers, root-readonly handoff and evidence separation')
 
 

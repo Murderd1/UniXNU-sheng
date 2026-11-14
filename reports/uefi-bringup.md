@@ -268,5 +268,27 @@ An independent direct FD decompression confirmed the diagnostic application,
 matching build ID, kernel RAM transport driver and DarwinBoot, including the
 expected volume digest and read-only handoff arguments. At 2026-11-14 07:42 UTC,
 `fastboot -s 33b62981 boot` returned sending and booting OKAY for that image.
-The command did not flash a partition. Screen and transport observations are
-awaited; OKAY alone does not establish UEFI or XNU execution.
+The command did not flash a partition. The owner's five diagnostic photos
+confirm the matching build, working page navigation and EFI application at EL1.
+The FDT at `0xb5e4b000` is valid (`0xe0e6c` bytes); initrd is present and reserved
+at `0xb604c000..0xb7fff2e0`. Driver status is `Bad Buffer Size`, range status is
+`Success`, and scanned bytes and both candidate counts are zero. This range
+contains 33239776 bytes, below the expected 184549376-byte FAT. `FindFat` rejects
+it before scanning, rather than finding a FAT with a bad hash. The raw prefix
+is `02 21 4c 18 fd 0d 28 00 e0 30 37 30 37 30 31 30` (legacy LZ4).
+
+The restored CN package's padded vendor and generic ramdisks total 33239040
+bytes, just 736 bytes below the observed initrd. The size and prefix support
+stock ramdisk delivery instead of the supplied complete FAT. This comparison
+does not prove which internal ABL branch selected the ramdisk. No verified
+filesystem is published; the file rows remain `Not Ready`. The loader status
+is also `Not Ready` because the app returns before querying it after volume
+failure; it does not establish a DarwinBoot fault. Boot availability is `NO`
+and no XNU handoff occurred.
+
+A v3 container comparison keeps every byte of the kernel/FD/DTB and complete
+ramdisk unchanged. It changes header size 1584 to 1580, version 4 to 3 and
+clears the v4 signature field, then removes its trailing 4096 zero bytes.
+The candidate is 185311232 bytes, SHA-256
+`da6935c048ace2c4f3f47cc7d73a88c0211a79aeabec6d3752bd43de2ebc104f`.
+This is a pending transport experiment, not a passed kernel boot.

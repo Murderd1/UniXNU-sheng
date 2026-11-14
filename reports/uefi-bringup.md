@@ -248,6 +248,25 @@ No boot gate or device acceptance criterion was relaxed.
 Run 43570348254 narrowed the native failure to a mocked UTF-16 string length:
 the 62-unit safe argument string and its token matches were correct, but
 StrLen reported 1386. The host mock now uses explicit 16-bit volatile reads
-and tests a terminator followed by nonzero units. Windows checks pass; the
-macOS rerun must establish whether this resolves the native failure. The
-firmware argument parser and its boot policy have not changed.
+and tests a terminator followed by nonzero units. Run 43570697123 at source
+5c076c6b16b83af99ee762d07207a76ea1462a55 subsequently passed the real macOS
+simulation, AARCH64 compilation and complete DEBUG firmware build. The
+firmware argument parser and its boot policy have not changed. Its INF uses
+the real EDK II BaseLib; the host-only mock is not part of the firmware.
+
+The downloaded run 43570697123 artifact passed all nine checksum entries,
+v4 container layout, exact embedded FD equality, appended DTB splash region
+and full ramdisk byte comparison. The image is 185315328 bytes, SHA-256
+`9337f8a5ada47c4c74d37f7d2d29553e0d43e78886c2e1187950315daea81f8c`;
+FD SHA-256 is `3ba871368afe106a08ca85618a05efa73cefbb9e73ee42e5a9b10a332efd691e`.
+The build ID is `sheng-full-5c076c6b16b8-fbd906466f38-20261114T072202Z`.
+Its 184549376-byte complete FAT is unchanged from the audited trial input
+(`f46ba1674303a37e89dd0e8ad24fe54ed43cd63c7dd29001216b87f36634ed68`).
+These are host verification results; device transport and XNU remain to be observed.
+
+An independent direct FD decompression confirmed the diagnostic application,
+matching build ID, kernel RAM transport driver and DarwinBoot, including the
+expected volume digest and read-only handoff arguments. At 2026-11-14 07:42 UTC,
+`fastboot -s 33b62981 boot` returned sending and booting OKAY for that image.
+The command did not flash a partition. Screen and transport observations are
+awaited; OKAY alone does not establish UEFI or XNU execution.

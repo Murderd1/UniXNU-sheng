@@ -69,9 +69,11 @@ def boot_image_policy(stage):
     raise ProbeError(f'Unknown UEFI diagnostic stage: {stage}')
 
 
-def validate_trial_mode(stage, root_readonly_probe):
+def validate_trial_mode(stage, root_readonly_probe, handoff_code_clean=False):
     if root_readonly_probe and stage != 'full':
         raise ProbeError('--root-readonly-probe requires --stage full')
+    if handoff_code_clean and (stage != 'full' or not root_readonly_probe):
+        raise ProbeError('--handoff-code-clean requires --stage full --root-readonly-probe')
 
 
 def digest(path):
@@ -263,6 +265,7 @@ def source_identity(stage='probe'):
     if stage == 'full':
         files += [ROOT / 'scripts/uefi_full_trial.py', ROOT / 'scripts/repack-sheng-full-trial.py',
                   ROOT / 'scripts/check-uefi-kernel-probe.py',
+                  ROOT / 'scripts/uefi_handoff_clean.py', ROOT / 'scripts/check-uefi-handoff-clean.py',
                   ROOT / 'package/UefiKernelProbe/tests/probe-host.c',
                   *sorted((ROOT / 'package/UefiKernelDisk').glob('*')),
                   *sorted((ROOT / 'package/UefiKernelProbe').glob('*'))]
@@ -374,6 +377,14 @@ def self_test():
             else:
                 raise ProbeError(f'{stage}: root-readonly mode must be rejected')
     validate_trial_mode('full', True)
+    validate_trial_mode('full', True, True)
+    for stage, readonly in (('probe', False), ('menu', False), ('full', False)):
+        try:
+            validate_trial_mode(stage, readonly, True)
+        except ProbeError:
+            pass
+        else:
+            raise ProbeError('Handoff code clean must require the full read-only root trial')
     import uefi_full_trial
     suffix = ' native-ufs-probe=10'
     canonical = uefi_full_trial.root_readonly_args()
@@ -409,7 +420,7 @@ def self_test():
 
 
 def build(args):
-    validate_trial_mode(args.stage, args.root_readonly_probe)
+    validate_trial_mode(args.stage, args.root_readonly_probe, args.handoff_code_clean)
     boot_image_overrides, boot_image_reason = boot_image_policy(args.stage)
     output = args.output.resolve()
     if output.exists():
@@ -488,6 +499,13 @@ def build(args):
                          uefi_full_trial.DARWIN_COMMIT, logs / 'sources.log')
             manifest['revisions']['DarwinBoot'] = uefi_full_trial.DARWIN_COMMIT
             manifest['isolated_changes'] = uefi_full_trial.integrate(sys.modules[__name__], uefi, tree, build_id, full_inputs)
+            if args.handoff_code_clean:
+                import uefi_handoff_clean
+                darwin = tree / 'drivers/DarwinBoot'
+                manifest['handoff_code_clean'] = uefi_handoff_clean.apply(darwin)
+                write_json(logs / 'handoff-code-clean.json', manifest['handoff_code_clean'])
+                (logs / 'darwin-handoff-overlay.patch').write_text(git(darwin, 'diff'), encoding='utf-8')
+                manifest['isolated_changes'].append('tree/drivers/DarwinBoot/DarwinBootPkg/Driver/Entry.S')
             board['firmware']['defines']['ENABLE_SECUREBOOT'] = '0'
         elif args.stage == 'menu':
             manifest['isolated_changes'] = integrate_menu(uefi, tree, build_id)
@@ -534,6 +552,11 @@ def build(args):
         edk2 = work / 'edk2'
         clone_remote(edk2_source['git'], edk2, EDK2_COMMIT, logs / 'sources.log')
         command(['git', '-C', edk2, 'submodule', 'update', '--init', '--depth', '1', '--', *edk2_source.get('submodules', [])], log=logs / 'sources.log')
+        if args.handoff_code_clean:
+            command([sys.executable, ROOT / 'scripts/check-uefi-handoff-clean.py',
+                     '--entry', tree / 'drivers/DarwinBoot/DarwinBootPkg/Driver/Entry.S',
+                     '--already-overlaid', '--edk2', edk2, '--aarch64-cc', 'clang',
+                     '--objdump', 'llvm-objdump'], log=logs / 'host-handoff-code-clean.log')
         shutil.copytree(ROOT / 'package/UefiProbe', tree / 'package/UefiProbe')
         command([sys.executable, tree / 'scripts/check-uefi-probe.py', '--edk2', edk2,
                  '--cc', 'cc', '--aarch64-cc', 'clang'], cwd=tree, env=env, log=logs / 'host-probe.log')
@@ -607,6 +630,7 @@ def main():
     parser.add_argument('--stage', choices=('probe', 'menu', 'full'), default='probe', help='probe: standalone UI; menu: embedded FAT fixture; full: existing complete XNU RAM trial')
     parser.add_argument('--full-package', type=Path, help='audited complete package directory for --stage full')
     parser.add_argument('--root-readonly-probe', action='store_true', help='only with --stage full: run existing kernel UFS root probe 10 with the fixed read-only argument whitelist')
+    parser.add_argument('--handoff-code-clean', action='store_true', help='only with the full read-only trial: clean the loader handoff code to PoC before the unchanged MMU/TLBI sequence')
     parser.add_argument('-j', '--jobs', type=int, default=4)
     parser.add_argument('--prepare-only', action='store_true', help='stage isolated firmware sources and integration; do not import stock inputs or compile')
     parser.add_argument('--self-test', action='store_true', help='run offline standalone-app contract checks only')
@@ -615,6 +639,8 @@ def main():
         parser.error('--jobs must be positive')
     if args.root_readonly_probe and args.stage != 'full':
         parser.error('--root-readonly-probe requires --stage full')
+    if args.handoff_code_clean and (args.stage != 'full' or not args.root_readonly_probe):
+        parser.error('--handoff-code-clean requires --stage full --root-readonly-probe')
     try:
         if args.self_test:
             self_test()

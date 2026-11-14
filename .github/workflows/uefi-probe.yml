@@ -12,6 +12,8 @@ on:
       - "scripts/make-uefi-menu-volume.py"
       - "scripts/repack-sheng-full-trial.py"
       - "scripts/uefi_full_trial.py"
+      - "scripts/uefi_handoff_clean.py"
+      - "scripts/check-uefi-handoff-clean.py"
       - "package/UefiProbe/**"
       - "package/UefiMenu/**"
       - "package/UefiMenuDisk/**"
@@ -40,6 +42,10 @@ on:
         default: "43467452829"
       root_readonly_probe:
         description: "Read-only root manifest diagnosis using the existing full kernel (full stage only)"
+        type: boolean
+        default: false
+      handoff_code_clean:
+        description: "Single-change handoff code PoC clean comparison (full read-only trial only)"
         type: boolean
         default: false
 
@@ -115,10 +121,12 @@ jobs:
           PREPARE_ONLY: ${{ inputs.prepare_only }}
           PROBE_STAGE: ${{ inputs.stage || 'full' }}
           ROOT_READONLY_PROBE: ${{ github.event_name == 'push' || inputs.root_readonly_probe }}
+          HANDOFF_CODE_CLEAN: ${{ github.event_name == 'push' || inputs.handoff_code_clean }}
         run: |
           args=(--unixnu probe-sources/UniXNU --uefi probe-sources/uefi-sheng --stage "$PROBE_STAGE" --output "probe-output-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}")
           [ "$PROBE_STAGE" != full ] || args+=(--full-package full-package/ipados-27.0.1-24A446/sheng_ipados27)
           [ "$ROOT_READONLY_PROBE" != true ] || args+=(--root-readonly-probe)
+          [ "$HANDOFF_CODE_CLEAN" != true ] || args+=(--handoff-code-clean)
           [ "$PREPARE_ONLY" != true ] || args+=(--prepare-only)
           python3 probe-sources/device/scripts/build-uefi-probe.py "${args[@]}" -j 4
       - name: preserve probe outputs and diagnostics

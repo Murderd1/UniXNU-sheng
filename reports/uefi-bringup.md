@@ -415,3 +415,28 @@ store gates remain `log=0 data-persist=0`. Preserving the accepted arguments
 also preserves WiFi/DPU RAM and MMIO initialization; read-only here refers to
 root metadata and disabled UFS media-write windows, not absence of hardware
 state changes.
+
+
+Run [43578621387](https://github.com/Murderd1/UniXNU-sheng/actions/runs/43578621387)
+at source `426d5ae2b428e4e0f14292d38036d9a5d7eddc40` passed the real macOS
+simulation, both AARCH64 mode compiles and full DEBUG firmware build. The
+185311232-byte v3 image SHA-256 is
+`7c2b01676a2af86a84879186c750a82d219a9cb8734f46e25ab79ed738ebcf03`;
+FD SHA-256 is `fbcdad76ffed553a7dbebe05c6415e91e0483318a8e243e3486aaadf5a3f9ce0`.
+The build ID is `sheng-full-426d5ae2b428-8bb24f457105-20261114T090359Z`.
+All nine downloaded digests, the v3 container, embedded FD/BootShim and splash
+DTB reservation pass. Independent decoding finds one complete 795-byte app
+argument string, exactly the frozen baseline plus probe 10, with Data/log off
+and no reset flags. All eight actual FAT files, the original configuration,
+driver digest constants, 55 FFS checksums and 32 APRIORI references agree.
+
+At 2026-11-14 09:18 UTC, temporary boot of serial 33b62981 returned sending and
+booting OKAY. No partition-write command was used. The owner had returned from
+Android to Fastboot; screen and root-check observations remain pending.
+
+The restored CN factory package's primary/backup GPT CRCs pass. Its userdata
+entry is number 29 and begins at 0x2f3840, agreeing with the root-image
+reference and Android's /dev/block/sda29 symlink. Its last LBA is a dynamic
+placeholder patched to NUM_DISK_SECTORS-6, not the current device endpoint.
+Android denies sysfs geometry reads. This factory comparison is supporting
+host evidence, not an independent live GPT read.

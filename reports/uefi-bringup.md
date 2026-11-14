@@ -353,3 +353,65 @@ root UUID match. OS/SystemOS APFS containers and sampled start/middle/end
 blocks agree with the signed tables. This does not replace a current device
 GPT check or a whole-image hash before installation. No root image has been
 written to the tablet.
+
+A subsequent fresh SHA-256 pass read the entire 14732319540-byte retained
+sparse root image and matched `1dad4810d16d9fc1b4306879c892b7417bf19fddcd97203dae0c0b5305b27bf6`.
+The live device reports 805306368-byte Fastboot downloads, 0xc000000-byte boot
+slots, 0x800000-byte init_boot slots and 0x6000000-byte vendor_boot slots.
+Run 43575878293 at b737aebc07d83d27ffcf629e92ae23aef82aa34c passed the full
+macOS root-readonly build; its downloaded runtime bytes still require local
+verification and a device result.
+
+The downloaded root-readonly image from run 43575878293 passed all nine
+checksums after extracting the FAT from its Android ramdisk. It is 185311232
+bytes, SHA-256 `16648ffee2404293af1a04a9c31f801182cbd8495556014239af8cafa0798468`;
+FD SHA-256 is `4e94cca3d224feb1bce6810b6876292e14c2561984a8ac511275dfc161ad15d4`.
+Its build ID is `sheng-full-b737aebc07d8-9395ed3c363e-20261114T082928Z`.
+The v3 container, exact FD/shim, appended DTB splash reservation and unchanged
+184549376-byte FAT passed local comparison. Device results are still awaited.
+
+
+## Root diagnostic restart and controlled argument comparison
+
+Independent inspection of the actual run 43575878293 FD passed: ROOT READONLY
+labels and the complete 230-byte argument string are present, the full FAT and
+all transport digest constants match the stage-3 baseline, and FFS checksums
+and APRIORI references are valid. Direct PE-section comparison found the
+DarwinBoot, transport and watchdog executable sections unchanged; the only
+changed executable module is the diagnostic application.
+
+At 2026-11-14 08:46 UTC, `fastboot -s 33b62981 boot` returned sending and booting
+OKAY for image `16648ffee2404293af1a04a9c31f801182cbd8495556014239af8cafa0798468`.
+After selecting the root diagnostic, the owner reported transient text or
+green/blue bars and a restart into stock Android. The expected root-check
+panic fields were not captured. No partition-write command was executed.
+Read-only Android properties report `shutdown,shell`, including the last-boot
+field; this does not identify this failure. Pstore listing is access denied.
+The artifact-local device-result.json and android-reboot-observation.json
+preserve these observations separately from host verification.
+
+The minimal diagnostic arguments removed numerous options from the successful
+full-kernel handoff at the same time as adding probe 10. This trial cannot
+isolate the probe branch from those argument changes. The next controlled
+comparison preserves the accepted stage-3 arguments, with Data/log writes
+still disabled, and appends only `native-ufs-probe=10`. The complete kernel,
+FAT, firmware selection and v3 transport stay fixed. The diagnostic must still
+stop before normal root publication. A reboot, build success or brief colour
+bar does not pass root diagnostics or stage 4.
+
+
+The controlled mode now requires the original 775-byte argument string plus
+one 20-byte suffix, for 795 bytes total (SHA-256
+`36bf9abc1dd27c635b646fa0746c632378354faa84e1127a5ffdddf446ccdbdc`).
+It rejects any source-argument drift. Existing host checks pass the baseline
+and reject changed peripheral flags, duplicated probe, whitespace drift and
+persistent Data. The real application's host simulation and both strict
+AARCH64 mode compiles pass with the longer canonical string.
+
+Pinned ShengUfs code confirms probe 10 bypasses normal root publication and
+store geometry. SourceStorage reaches Data creation and boot-log startup only
+after UFS start returns, while this probe panics instead. Independent log and
+store gates remain `log=0 data-persist=0`. Preserving the accepted arguments
+also preserves WiFi/DPU RAM and MMIO initialization; read-only here refers to
+root metadata and disabled UFS media-write windows, not absence of hardware
+state changes.

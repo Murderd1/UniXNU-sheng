@@ -163,6 +163,8 @@ static void ready(void) {
   UINTN i;
   Snapshot();
   if(!CanBoot()) {
+    CONST CHAR16 *token, *end;
+    UINTN token_length, unit;
     fprintf(stderr,"ready scenario=%u: arguments=%u verified=%u attempted=%u diagnostic=%llx status=%llx range=%llx state=%u flags=%x volume=%p loader=%llx volume_status=%llx\n",
             scenario,(unsigned)mArgumentsSafe,(unsigned)mVerifiedVolume,(unsigned)mBootAttempted,
             (unsigned long long)mDiagnosticStatus,(unsigned long long)mDiagnostic.Status,
@@ -171,6 +173,28 @@ static void ready(void) {
             (unsigned long long)mLoaderStatus,(unsigned long long)mVolumeStatus);
     for(i=0;i<PROBE_FILE_COUNT;i++) fprintf(stderr,"file[%u]: status=%llx bytes=%llu\n",(unsigned)i,
       (unsigned long long)mFiles[i].Status,(unsigned long long)mFiles[i].Bytes);
+    fprintf(stderr,"strings: CHAR16=%u wide_literal_unit=%u safe_units=%u args_length=%llu guard_length=%llu compare=%lld\n",
+      (unsigned)sizeof(CHAR16),(unsigned)sizeof(L"x"[0]),(unsigned)(sizeof(safe_args)/sizeof(safe_args[0])),
+      (unsigned long long)StrLen(mTestArgs),(unsigned long long)StrLen(L"data-persist"),
+      (long long)StrnCmp(mTestArgs,L"data-persist",12));
+    fprintf(stderr,"argument code units:");
+    for(unit=0;unit<sizeof(safe_args)/sizeof(safe_args[0]);unit++) fprintf(stderr," %04x",(unsigned)mTestArgs[unit]);
+    fprintf(stderr,"\n");
+    token=mTestArgs;
+    for(i=0;i<16 && *token;i++) {
+      while(*token==L' ') token++;
+      if(!*token) break;
+      end=token; while(*end && *end!=L' ' && (UINTN)(end-token)<1000) end++;
+      token_length=(UINTN)(end-token);
+      fprintf(stderr,"token[%u]: units=%llu forbidden=%u/%u names=%u/%u/%u/%u exact=%u/%u/%u/%u\n",
+        (unsigned)i,(unsigned long long)token_length,
+        (unsigned)TokenNames(token,token_length,L"data-reset"),(unsigned)TokenNames(token,token_length,L"autoreset"),
+        (unsigned)TokenNames(token,token_length,L"data-persist"),(unsigned)TokenNames(token,token_length,L"log"),
+        (unsigned)TokenNames(token,token_length,L"native-source-storage"),(unsigned)TokenNames(token,token_length,L"native-ufs-root"),
+        (unsigned)TokenIs(token,token_length,L"data-persist=0"),(unsigned)TokenIs(token,token_length,L"log=0"),
+        (unsigned)TokenIs(token,token_length,L"native-source-storage=1"),(unsigned)TokenIs(token,token_length,L"native-ufs-root=1"));
+      token=end;
+    }
   }
   CHECK(CanBoot());
 }

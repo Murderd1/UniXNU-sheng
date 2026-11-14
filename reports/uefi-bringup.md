@@ -244,3 +244,10 @@ MSVC and native Clang simulations passed. The host check now prints every
 boot gate and file status on a positive-case failure. The workflow runs it
 before large input downloads, and failed logged commands expose their tail.
 No boot gate or device acceptance criterion was relaxed.
+
+Run 43570348254 narrowed the native failure to a mocked UTF-16 string length:
+the 62-unit safe argument string and its token matches were correct, but
+StrLen reported 1386. The host mock now uses explicit 16-bit volatile reads
+and tests a terminator followed by nonzero units. Windows checks pass; the
+macOS rerun must establish whether this resolves the native failure. The
+firmware argument parser and its boot policy have not changed.

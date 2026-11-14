@@ -45,7 +45,15 @@ static int draining;
 
 #define CHECK(x) do { if (!(x)) { fprintf(stderr,"check failed: %s:%d: %s\n",__FILE__,__LINE__,#x); exit(1); } } while (0)
 
-UINTN EFIAPI StrLen(CONST CHAR16 *s) { UINTN n=0; while(s[n]) n++; return n; }
+UINTN EFIAPI StrLen(CONST CHAR16 *s) {
+  // The ordinary loop reported 1386 for a 62-unit terminated string in the
+  // optimized macOS fixture. Keep mocked UEFI reads explicitly 16-bit;
+  // the native macOS wchar_t ABI differs from this -fshort-wchar fixture.
+  CONST volatile CHAR16 *units=s;
+  UINTN n=0;
+  while(units[n]) n++;
+  return n;
+}
 INTN EFIAPI StrnCmp(CONST CHAR16 *a, CONST CHAR16 *b, UINTN n) {
   UINTN i; for(i=0;i<n;i++) { if(a[i]!=b[i]) return a[i]>b[i] ? 1 : -1; if(!a[i]) break; } return 0;
 }
@@ -209,7 +217,11 @@ static void seed_failure(EFI_STATUS expected) {
   CHECK(BootFullKernel()==EFI_NOT_READY);
 }
 int main(void) {
-  UINTN i; static CONST CHAR16 *bad_args[] = {
+  UINTN i;
+  // Nonzero units immediately after a 16-bit terminator distinguish UEFI
+  // StrLen from a native 32-bit wchar_t routine without an out-of-bounds read.
+  static CONST CHAR16 utf16_terminator[] = {L'a',L'b',0,L'x',L'y',L'z',0,0};
+  static CONST CHAR16 *bad_args[] = {
     L"", L"data-persist=2 log=0 native-source-storage=1 native-ufs-root=1",
     L"data-persist=0 log=1 native-source-storage=1 native-ufs-root=1",
     L"data-persist=0 log=0 native-source-storage=0 native-ufs-root=1",
@@ -229,6 +241,9 @@ int main(void) {
     L"data-persist=0 log=0 native-source-storage=1 native-ufs-root=1 foo\tdata-reset=1",
     L"data-persist=0 log=0 native-source-storage=1 native-ufs-root=1 foo\nautoreset=1"
   };
+  CHECK(sizeof(CHAR16)==2 && sizeof(L"x"[0])==2);
+  CHECK(StrLen(safe_args)==62 && StrLen(L"data-persist")==12);
+  CHECK(StrLen(utf16_terminator)==2);
   initialize(); ready(); CHECK(BootFullKernel()==EFI_ACCESS_DENIED && boot_calls==1 && read_calls==6);
   CHECK(BootFullKernel()==EFI_NOT_READY && boot_calls==1 && allocations==frees && opened==closed);
   initialize(); loader.Revision=UNIXNU_LOADER_REVISION_1; ready(); CHECK(BootFullKernel()==EFI_ACCESS_DENIED && boot_calls==1);

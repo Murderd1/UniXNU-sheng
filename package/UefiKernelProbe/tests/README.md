@@ -18,3 +18,8 @@ the privileged `CurrentEL` read. The separate AARCH64 freestanding compile keeps
 that instruction and checks the actual firmware build path against EDK II.
 
 These checks do not demonstrate firmware, XNU, or tablet execution.
+
+The native mock reads CHAR16 through explicit volatile 16-bit accesses and
+checks termination before following nonzero units. An optimized macOS run
+reported an incorrect string length with the ordinary loop; firmware uses
+EDK II BaseLib rather than this host mock. Boot policy remains unchanged.

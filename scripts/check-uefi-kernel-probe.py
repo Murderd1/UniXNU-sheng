@@ -5,11 +5,13 @@ The generated configuration is a temporary test fixture. This does not execute
 firmware or XNU, or establish tablet display, input, storage or recovery behavior.
 """
 import argparse
+import json
 from pathlib import Path
 import platform
 import shutil
 import subprocess
 import tempfile
+import uefi_full_trial
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -44,6 +46,7 @@ def main():
         shutil.copy2(ROOT / 'package/UefiKernelProbe/tests/probe-host.c', fixture)
         config = source_dir / 'ShengFullTrialConfig.h'
         config.write_text('#define SHENG_FULL_TRIAL_ARGS mTestArgs\n#define SHENG_FULL_TRIAL_ROOT_READONLY mTestRootReadonly\n'
+                          '#define SHENG_FULL_ROOT_BASELINE_ARGS L' + json.dumps(uefi_full_trial.full_root_args()) + '\n'
                           '#define SHENG_FULL_TRIAL_RAMDISK_BYTES 16ULL\n', encoding='utf-8')
         executable = work / ('probe-host.exe' if platform.system() == 'Windows' else 'probe-host')
         includes = [include, include / native_arch, unixnu_include, source_dir]
@@ -57,16 +60,18 @@ def main():
         subprocess.run(command, check=True, cwd=work)
         subprocess.run([str(executable)], check=True, timeout=45)
         if args.aarch64_cc:
-            for readonly in (0, 1):
-                arguments = 'SHENG_ROOT_READONLY_ARGS' if readonly else 'L"data-persist=0 log=0 native-source-storage=1 native-ufs-root=1"'
+            for mode, readonly, arguments in (
+                    ('full', 0, 'L"data-persist=0 log=0 native-source-storage=1 native-ufs-root=1"'),
+                    ('root-readonly', 1, 'SHENG_ROOT_READONLY_ARGS'),
+                    ('full-root', 0, 'L' + json.dumps(uefi_full_trial.full_root_args()))):
                 config.write_text('#include "ShengRootReadonlyArgs.h"\n#define SHENG_FULL_TRIAL_ARGS ' + arguments + '\n'
                                   f'#define SHENG_FULL_TRIAL_ROOT_READONLY {readonly}\n'
                                   '#define SHENG_FULL_TRIAL_RAMDISK_BYTES 16ULL\n', encoding='utf-8')
                 subprocess.run([args.aarch64_cc, '--target=aarch64-unknown-windows', '-ffreestanding', '-fshort-wchar',
                                 '-fno-builtin', '-Werror', '-Wall', '-Wextra', '-Wno-unused-parameter',
                                 '-I', str(include), '-I', str(include / 'AArch64'), '-I', str(unixnu_include),
-                                '-c', str(source), '-o', str(work / f'ShengKernelProbe-{readonly}.obj')], check=True)
-            print('PASS: kernel probe AARCH64 freestanding compilation against real EDK II headers (full and root-readonly modes)')
+                                '-c', str(source), '-o', str(work / f'ShengKernelProbe-{mode}.obj')], check=True)
+            print('PASS: kernel probe AARCH64 freestanding compilation against real EDK II headers (full, root-readonly and exact full-root modes)')
     print('Host verification only; firmware build and tablet acceptance remain separate.')
 
 

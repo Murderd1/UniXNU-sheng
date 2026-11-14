@@ -1,4 +1,5 @@
 """Isolated integration for an existing complete XNU package and RAM transport."""
+import hashlib
 import importlib.util
 import json
 from pathlib import Path
@@ -23,7 +24,27 @@ def root_readonly_args():
     return json.loads(match[1])
 
 
-def handoff_inputs(report, root_readonly_probe=False):
+def full_root_args():
+    """The exact successful full handoff, without the diagnostic probe suffix."""
+    suffix = ' native-ufs-probe=10'
+    diagnostic = root_readonly_args()
+    if not diagnostic.endswith(suffix):
+        raise ValueError('Canonical root diagnostic must end with probe 10')
+    arguments = diagnostic[:-len(suffix)]
+    if (len(arguments) != 775 or hashlib.sha256(arguments.encode('ascii')).hexdigest() !=
+            '452563097518e626be38881b9da8e47b68fb5161608cddfe91088b1691811a03'):
+        raise ValueError('Full-root trial requires the exact successful 775-byte Stage 3 baseline')
+    return arguments
+
+
+def trial_mode(root_readonly_probe=False, full_root_trial=False):
+    if root_readonly_probe and full_root_trial:
+        raise ValueError('Root-readonly probe and full-root trial are mutually exclusive')
+    return 'full-root-trial' if full_root_trial else 'root-readonly-probe' if root_readonly_probe else 'full-kernel'
+
+
+def handoff_inputs(report, root_readonly_probe=False, full_root_trial=False):
+    mode = trial_mode(root_readonly_probe, full_root_trial)
     result = dict(report)
     result['kernel_args_origin'] = 'Source FAT configuration after the audited repack; not necessarily the effective loader handoff.'
     arguments = report['kernel_args']
@@ -31,8 +52,10 @@ def handoff_inputs(report, root_readonly_probe=False):
         arguments += ' native-ufs-probe=10'
         if arguments != root_readonly_args():
             raise ValueError('Root-readonly source arguments differ from the exact Stage 3 baseline plus probe 10')
+    elif full_root_trial and arguments != full_root_args():
+        raise ValueError('Full-root source arguments differ from the exact Stage 3 baseline')
     result['effective_handoff_args'] = arguments
-    result['trial_mode'] = 'root-readonly-probe' if root_readonly_probe else 'full-kernel'
+    result['trial_mode'] = mode
     return result
 
 
@@ -42,7 +65,7 @@ def render_app_config(inputs):
             '#define SHENG_FULL_TRIAL_RAMDISK_BYTES ' + str(inputs['seed_bytes']) + 'ULL\n')
 
 
-def prepare(source, output, root_readonly_probe=False):
+def prepare(source, output, root_readonly_probe=False, full_root_trial=False):
     spec = importlib.util.spec_from_file_location('full_repack', ROOT / 'scripts/repack-sheng-full-trial.py')
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
@@ -64,7 +87,7 @@ def prepare(source, output, root_readonly_probe=False):
     report['boot_sector_sha256'] = module.sha(payload[:512])
     report['boot_prefix_hex'] = payload[:16].hex()
     # The mode changes only the generated app handoff, never the FAT bytes.
-    report = handoff_inputs(report, root_readonly_probe)
+    report = handoff_inputs(report, root_readonly_probe, full_root_trial)
     (output / 'full-trial-inputs.json').write_text(json.dumps(report, indent=2) + '\n')
     return report
 

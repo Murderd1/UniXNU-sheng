@@ -69,11 +69,15 @@ def boot_image_policy(stage):
     raise ProbeError(f'Unknown UEFI diagnostic stage: {stage}')
 
 
-def validate_trial_mode(stage, root_readonly_probe, handoff_code_clean=False):
+def validate_trial_mode(stage, root_readonly_probe, handoff_code_clean=False, full_root_trial=False):
+    if root_readonly_probe and full_root_trial:
+        raise ProbeError('--root-readonly-probe and --full-root-trial are mutually exclusive')
     if root_readonly_probe and stage != 'full':
         raise ProbeError('--root-readonly-probe requires --stage full')
-    if handoff_code_clean and (stage != 'full' or not root_readonly_probe):
-        raise ProbeError('--handoff-code-clean requires --stage full --root-readonly-probe')
+    if full_root_trial and (stage != 'full' or not handoff_code_clean):
+        raise ProbeError('--full-root-trial requires --stage full --handoff-code-clean')
+    if handoff_code_clean and (stage != 'full' or not (root_readonly_probe or full_root_trial)):
+        raise ProbeError('--handoff-code-clean requires --stage full and an explicit root trial mode')
 
 
 def digest(path):
@@ -378,13 +382,22 @@ def self_test():
                 raise ProbeError(f'{stage}: root-readonly mode must be rejected')
     validate_trial_mode('full', True)
     validate_trial_mode('full', True, True)
+    validate_trial_mode('full', False, True, True)
+    for stage, readonly, clean in (('probe', False, True), ('menu', False, True),
+                                    ('full', False, False), ('full', True, True)):
+        try:
+            validate_trial_mode(stage, readonly, clean, True)
+        except ProbeError:
+            pass
+        else:
+            raise ProbeError('Full-root trial must be explicit, full-only, clean, and exclusive')
     for stage, readonly in (('probe', False), ('menu', False), ('full', False)):
         try:
             validate_trial_mode(stage, readonly, True)
         except ProbeError:
             pass
         else:
-            raise ProbeError('Handoff code clean must require the full read-only root trial')
+            raise ProbeError('Handoff code clean must require an explicit full root trial mode')
     import uefi_full_trial
     suffix = ' native-ufs-probe=10'
     canonical = uefi_full_trial.root_readonly_args()
@@ -395,6 +408,20 @@ def self_test():
         raise ProbeError('Root-readonly arguments changed the exact successful Stage 3 baseline')
     source_inputs = {'kernel_args': baseline, 'seed_bytes': 16,
                      'image_sha256': 'intermediate-image', 'volume_sha256': 'unchanged-volume'}
+    full_root = uefi_full_trial.handoff_inputs(source_inputs, full_root_trial=True)
+    if (uefi_full_trial.full_root_args() != baseline or
+            full_root['effective_handoff_args'] != baseline or full_root['trial_mode'] != 'full-root-trial' or
+            any(full_root[key] != value for key, value in source_inputs.items())):
+        raise ProbeError('Full-root trial changed the exact baseline or payload provenance')
+    config = uefi_full_trial.render_app_config(full_root)
+    if ('#define SHENG_FULL_TRIAL_ARGS L' + json.dumps(baseline)) not in config or '#define SHENG_FULL_TRIAL_ROOT_READONLY 0\n' not in config:
+        raise ProbeError('Full-root trial must use the existing normal handoff with exact baseline arguments')
+    try:
+        uefi_full_trial.handoff_inputs(source_inputs, True, True)
+    except ValueError:
+        pass
+    else:
+        raise ProbeError('Conflicting full-root and readonly input modes must reject')
     for readonly in (False, True):
         inputs = uefi_full_trial.handoff_inputs(source_inputs, readonly)
         if any(inputs[key] != value for key, value in source_inputs.items()):
@@ -406,6 +433,8 @@ def self_test():
         if ('#define SHENG_FULL_TRIAL_ARGS L' + json.dumps(expected)) not in config or f'#define SHENG_FULL_TRIAL_ROOT_READONLY {int(readonly)}\n' not in config:
             raise ProbeError('Generated app configuration differs from effective handoff')
     for changed in (baseline + ' ', baseline.replace('wifi=5', 'wifi=0'), baseline + suffix,
+                    baseline + ' native-ufs-probe=11', baseline + ' native-ufs-probe=0',
+                    baseline.replace('log=0', 'log=1'), baseline + ' data-reset=0',
                     baseline.replace('data-persist=0', 'data-persist=2')):
         drifted = dict(source_inputs, kernel_args=changed)
         try:
@@ -414,13 +443,19 @@ def self_test():
             pass
         else:
             raise ProbeError('Root-readonly mode accepted source argument drift')
+        try:
+            uefi_full_trial.handoff_inputs(drifted, full_root_trial=True)
+        except ValueError:
+            pass
+        else:
+            raise ProbeError('Full-root trial accepted source argument drift')
         if uefi_full_trial.handoff_inputs(drifted, False)['effective_handoff_args'] != changed:
             raise ProbeError('Ordinary full mode must preserve its source arguments')
-    print('PASS: GUID, standalone dependencies, build ID, checkpoints, stage containers, root-readonly handoff and evidence separation')
+    print('PASS: GUID, standalone dependencies, build ID, checkpoints, stage containers, exact root trial modes and evidence separation')
 
 
 def build(args):
-    validate_trial_mode(args.stage, args.root_readonly_probe, args.handoff_code_clean)
+    validate_trial_mode(args.stage, args.root_readonly_probe, args.handoff_code_clean, args.full_root_trial)
     boot_image_overrides, boot_image_reason = boot_image_policy(args.stage)
     output = args.output.resolve()
     if output.exists():
@@ -450,7 +485,8 @@ def build(args):
                 'excluded_stages': ['kernel', 'payload', 'Data seed', 'IPSW', 'userdata flashing'],
                 'device_commands_executed': False}
     if args.stage == 'full':
-        manifest['trial_mode'] = 'root-readonly-probe' if args.root_readonly_probe else 'full-kernel'
+        import uefi_full_trial
+        manifest['trial_mode'] = uefi_full_trial.trial_mode(args.root_readonly_probe, args.full_root_trial)
     write_json(output / 'manifest.json', manifest)
     checkpoints = checkpoints_document()
     if args.stage == 'menu':
@@ -468,6 +504,12 @@ def build(args):
                                          'manual UFS root probe 10 handoff', 'userdata boundaries and magic',
                                          'manifest status and windows on the diagnostic panic'],
                                acceptance='Read-only root-layout diagnostic using the existing full kernel. Record the probe 10 panic; it intentionally stops before normal root publication and does not establish an OS boot.')
+        elif args.full_root_trial:
+            checkpoints.update(expected=['exact FAT SHA256 verified', 'manual full XNU handoff',
+                                         'exact 775-byte baseline without native-ufs-probe',
+                                         'native root publication', 'root mount or explicit failure',
+                                         'launchd or explicit failure'],
+                               acceptance='Explicit post-install full-root trial. Retain handoff self-code clean, log=0 and data-persist=0. Record root mounting and launchd separately; firmware acceptance alone does not establish either checkpoint.')
     write_json(output / 'checkpoints.json', checkpoints)
     try:
         clone_local(args.unixnu, tools, TOOLS_COMMIT, logs / 'sources.log')
@@ -492,7 +534,8 @@ def build(args):
             import uefi_full_trial
             if not args.full_package:
                 raise ProbeError('--stage full requires --full-package at the audited complete package')
-            full_inputs = uefi_full_trial.prepare(args.full_package.resolve(), output, args.root_readonly_probe)
+            full_inputs = uefi_full_trial.prepare(args.full_package.resolve(), output,
+                                                 args.root_readonly_probe, args.full_root_trial)
             manifest['full_trial'] = full_inputs
             manifest['excluded_stages'] = ['native kernel compilation', 'IPSW download', 'Data seed creation', 'partition flashing']
             clone_remote('https://github.com/UniXNU/DarwinBoot.git', tree / 'drivers/DarwinBoot',
@@ -630,17 +673,18 @@ def main():
     parser.add_argument('--stage', choices=('probe', 'menu', 'full'), default='probe', help='probe: standalone UI; menu: embedded FAT fixture; full: existing complete XNU RAM trial')
     parser.add_argument('--full-package', type=Path, help='audited complete package directory for --stage full')
     parser.add_argument('--root-readonly-probe', action='store_true', help='only with --stage full: run existing kernel UFS root probe 10 with the fixed read-only argument whitelist')
-    parser.add_argument('--handoff-code-clean', action='store_true', help='only with the full read-only trial: clean the loader handoff code to PoC before the unchanged MMU/TLBI sequence')
+    parser.add_argument('--full-root-trial', action='store_true', help='only with --stage full --handoff-code-clean: use the exact 775-byte baseline without a native UFS probe; log and Data persistence remain disabled')
+    parser.add_argument('--handoff-code-clean', action='store_true', help='only with an explicit full root trial: clean the loader handoff code to PoC before the unchanged MMU/TLBI sequence')
     parser.add_argument('-j', '--jobs', type=int, default=4)
     parser.add_argument('--prepare-only', action='store_true', help='stage isolated firmware sources and integration; do not import stock inputs or compile')
     parser.add_argument('--self-test', action='store_true', help='run offline standalone-app contract checks only')
     args = parser.parse_args()
     if args.jobs < 1:
         parser.error('--jobs must be positive')
-    if args.root_readonly_probe and args.stage != 'full':
-        parser.error('--root-readonly-probe requires --stage full')
-    if args.handoff_code_clean and (args.stage != 'full' or not args.root_readonly_probe):
-        parser.error('--handoff-code-clean requires --stage full --root-readonly-probe')
+    try:
+        validate_trial_mode(args.stage, args.root_readonly_probe, args.handoff_code_clean, args.full_root_trial)
+    except ProbeError as error:
+        parser.error(str(error))
     try:
         if args.self_test:
             self_test()

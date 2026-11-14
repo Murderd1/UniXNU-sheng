@@ -44,8 +44,12 @@ on:
         description: "Read-only root manifest diagnosis using the existing full kernel (full stage only)"
         type: boolean
         default: false
+      full_root_trial:
+        description: "Explicit installed-root trial; exact baseline args, no probe, log=0/data-persist=0 (requires full + handoff code clean)"
+        type: boolean
+        default: false
       handoff_code_clean:
-        description: "Single-change handoff code PoC clean comparison (full read-only trial only)"
+        description: "Handoff code PoC clean (full read-only probe or explicit full-root trial only)"
         type: boolean
         default: false
 
@@ -97,6 +101,16 @@ jobs:
           done
       - name: offline probe contract checks
         run: python3 probe-sources/device/scripts/build-uefi-probe.py --self-test
+      - name: validate explicit full-root trial inputs
+        if: inputs.full_root_trial
+        env:
+          PROBE_STAGE: ${{ inputs.stage }}
+          ROOT_READONLY_PROBE: ${{ inputs.root_readonly_probe }}
+          HANDOFF_CODE_CLEAN: ${{ inputs.handoff_code_clean }}
+        run: |
+          test "$PROBE_STAGE" = full
+          test "$ROOT_READONLY_PROBE" != true
+          test "$HANDOFF_CODE_CLEAN" = true
       - uses: actions/checkout@v4
         if: inputs.stage == 'full' || github.event_name == 'push'
         with:
@@ -121,11 +135,13 @@ jobs:
           PREPARE_ONLY: ${{ inputs.prepare_only }}
           PROBE_STAGE: ${{ inputs.stage || 'full' }}
           ROOT_READONLY_PROBE: ${{ github.event_name == 'push' || inputs.root_readonly_probe }}
+          FULL_ROOT_TRIAL: ${{ github.event_name == 'workflow_dispatch' && inputs.full_root_trial }}
           HANDOFF_CODE_CLEAN: ${{ github.event_name == 'push' || inputs.handoff_code_clean }}
         run: |
           args=(--unixnu probe-sources/UniXNU --uefi probe-sources/uefi-sheng --stage "$PROBE_STAGE" --output "probe-output-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}")
           [ "$PROBE_STAGE" != full ] || args+=(--full-package full-package/ipados-27.0.1-24A446/sheng_ipados27)
           [ "$ROOT_READONLY_PROBE" != true ] || args+=(--root-readonly-probe)
+          [ "$FULL_ROOT_TRIAL" != true ] || args+=(--full-root-trial)
           [ "$HANDOFF_CODE_CLEAN" != true ] || args+=(--handoff-code-clean)
           [ "$PREPARE_ONLY" != true ] || args+=(--prepare-only)
           python3 probe-sources/device/scripts/build-uefi-probe.py "${args[@]}" -j 4

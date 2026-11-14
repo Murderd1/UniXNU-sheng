@@ -332,6 +332,12 @@ int main(void) {
   initialize(); mTestRootReadonly=TRUE; mTestArgs=SHENG_ROOT_READONLY_ARGS;
   push(SCAN_UP,0); push(SCAN_UP,0); push(0,CHAR_CARRIAGE_RETURN); push(SCAN_DOWN,0); push(0,CHAR_CARRIAGE_RETURN); run_ui(5);
   CHECK(boot_calls==1 && mBootAttempted && strstr(print_log,"expect a diagnostic panic"));
+  // The explicit installed-root mode uses the existing full handoff path,
+  // with the build-time verified baseline and no diagnostic probe suffix.
+  initialize(); mTestArgs=SHENG_FULL_ROOT_BASELINE_ARGS; ready();
+  CHECK(StrLen(mTestArgs)==775 && !mTestRootReadonly);
+  CHECK(BootFullKernel()==EFI_ACCESS_DENIED && boot_calls==1 && read_calls==6);
+  CHECK(BootFullKernel()==EFI_NOT_READY && boot_calls==1);
   initialize();
   puts("PASS: real kernel probe host simulation: verified-volume/argument gates, exact partial seed reads, cleanup, one callback, confirmation, persistent recovery display and root-readonly whitelist/UI");
   return 0;

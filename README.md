@@ -48,6 +48,39 @@ ShengPreflight submodules. Shared components come from the selected profiles
 and UniXNU catalog. Read the [UFS guide](https://unixnu.com/porting/ufs) before
 changing storage resources or policy.
 
+## UEFI bring-up
+
+Use the independent **UEFI probe** Actions workflow while qualifying firmware.
+It builds DEBUG firmware and a boot image without a kernel, IPSW, payload,
+installation seed or userdata image. It keeps the stock archive pinned in
+`board.toml`; the current input is `OS3.0.305.0.WNXMIXM`.
+
+On macOS, with clean checkouts of UniXNU `d830d23b0d19c9322d906c21afeca1d6c54aeffe`
+and uefi-sheng `66421cb7bb5694843aec8de1ca3d1de4c20cca38`:
+
+```sh
+python3 scripts/build-uefi-probe.py --self-test
+python3 scripts/build-uefi-probe.py --unixnu ../UniXNU --uefi ../uefi-sheng --output out/uefi-probe-001
+```
+
+Each output directory must be new. The build changes isolated source copies,
+embeds the probe instead of the normal boot manager, and removes DarwinBoot.
+It produces `boot.img`, `SILICIUM_UEFI.fd`, input hashes, a manifest and logs.
+`--prepare-only` prepares sources without importing stock files or compiling.
+Host checks and successful builds leave hardware verification pending.
+
+First restore a matching official Android package, retain the unlocked
+bootloader, and verify Android boot and Fastboot detection. Then qualify the
+probe on three cold boots, each with five minutes of visible heartbeat and a
+real key response. Record the displayed build ID, image hash and return to
+Fastboot for every run. The probe stays in UEFI and never starts an OS.
+`R` then `Y` requests an ordinary restart; use the hardware key combination
+to enter Fastboot. See [the staged bring-up record](reports/uefi-bringup.md).
+
+The test image consumes the board's existing firmware input even when the
+Android recovery baseline uses a different regional package. Record both
+versions when investigating the bootloader handoff.
+
 ## Build
 
 One command from this repository builds everything: dependencies, preflight,

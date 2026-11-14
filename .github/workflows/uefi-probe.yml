@@ -1,0 +1,88 @@
+name: UEFI probe
+
+# Independent firmware bring-up: no kernel, IPSW, payload or installation seed.
+on:
+  workflow_dispatch:
+    inputs:
+      runner:
+        description: "Build host for the independent DEBUG UEFI probe"
+        type: choice
+        options: ["macos-26", "macos-26-intel", "sheng-build"]
+        default: "macos-26"
+      prepare_only:
+        description: "Prepare isolated sources only; no stock import or firmware compilation"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: uefi-probe-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  probe:
+    runs-on: ${{ inputs.runner == 'sheng-build' && fromJSON('["self-hosted","macOS","ARM64","sheng-build"]') || inputs.runner }}
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: probe-sources/device
+          clean: ${{ inputs.runner != 'sheng-build' }}
+          # No board/kernel/peripheral submodules are needed by this entry point.
+          submodules: false
+      - uses: actions/checkout@v4
+        with:
+          repository: UniXNU/UniXNU
+          ref: d830d23b0d19c9322d906c21afeca1d6c54aeffe
+          path: probe-sources/UniXNU
+          clean: ${{ inputs.runner != 'sheng-build' }}
+          submodules: false
+      - uses: actions/checkout@v4
+        with:
+          repository: UniXNU/uefi-sheng
+          ref: 66421cb7bb5694843aec8de1ca3d1de4c20cca38
+          path: probe-sources/uefi-sheng
+          clean: ${{ inputs.runner != 'sheng-build' }}
+          submodules: false
+      - name: firmware tools
+        run: |
+          formulas="python@3.13 dtc llvm lld cmake"
+          brew install --formula $formulas || { brew link --overwrite python@3.13; brew install --formula $formulas; }
+          python_bin="$(brew --prefix python@3.13)/libexec/bin"
+          llvm_bin="$(brew --prefix llvm)/bin"
+          lld_bin="$(brew --prefix lld)/bin"
+          export PATH="$python_bin:$(brew --prefix)/bin:/usr/bin:/bin:/usr/sbin:/sbin:$llvm_bin:$lld_bin"
+          echo "PATH=$PATH" >> "$GITHUB_ENV"
+          python3 -c 'import sys; assert sys.version_info >= (3, 11)'
+          for tool in clang make git cmake dtc fdtget fdtput llvm-objcopy llvm-nm lld-link llvm-lib llvm-rc; do
+            command -v "$tool" >/dev/null || { echo "Missing firmware tool: $tool" >&2; exit 1; }
+          done
+      - name: offline probe contract checks
+        run: python3 probe-sources/device/scripts/build-uefi-probe.py --self-test
+      - name: build isolated DEBUG probe
+        env:
+          PREPARE_ONLY: ${{ inputs.prepare_only }}
+        run: |
+          args=(--unixnu probe-sources/UniXNU --uefi probe-sources/uefi-sheng --output "probe-output-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}")
+          [ "$PREPARE_ONLY" != true ] || args+=(--prepare-only)
+          python3 probe-sources/device/scripts/build-uefi-probe.py "${args[@]}" -j 4
+      - name: preserve probe outputs and diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: uefi-probe-${{ github.run_id }}-${{ github.run_attempt }}
+          retention-days: 7
+          if-no-files-found: warn
+          # Do not upload work/ (vendor modules and source checkouts).
+          path: |
+            probe-output-${{ github.run_id }}-${{ github.run_attempt }}/boot.img
+            probe-output-${{ github.run_id }}-${{ github.run_attempt }}/SILICIUM_UEFI.fd
+            probe-output-${{ github.run_id }}-${{ github.run_attempt }}/boot.json
+            probe-output-${{ github.run_id }}-${{ github.run_attempt }}/manifest.json
+            probe-output-${{ github.run_id }}-${{ github.run_attempt }}/checkpoints.json
+            probe-output-${{ github.run_id }}-${{ github.run_attempt }}/stock-inputs.json
+            probe-output-${{ github.run_id }}-${{ github.run_attempt }}/fv-check.json
+            probe-output-${{ github.run_id }}-${{ github.run_attempt }}/SHA256SUMS
+            probe-output-${{ github.run_id }}-${{ github.run_attempt }}/logs/**

@@ -1,0 +1,36 @@
+## @file
+#  Exact-identity, read-only FAT slice of the ABL initrd for sheng diagnostics.
+#  SPDX-License-Identifier: BSD-2-Clause-Patent
+##
+[Defines]
+  INF_VERSION    = 0x0001001B
+  BASE_NAME      = ShengKernelDiskDxe
+  FILE_GUID      = 9EE3AF11-61CB-48D5-9F7E-DB4C8F8B0485
+  MODULE_TYPE    = DXE_DRIVER
+  VERSION_STRING = 0.1
+  ENTRY_POINT    = ShengKernelDiskDxeEntry
+
+[Sources]
+  ShengKernelDiskDxe.c
+  ShengKernelDiskDiagnostic.h
+  KernelDiskExpected.h
+
+[Packages]
+  MdePkg/MdePkg.dec
+
+[LibraryClasses]
+  BaseLib
+  BaseMemoryLib
+  DebugLib
+  FdtLib
+  HobLib
+  MemoryAllocationLib
+  UefiBootServicesTableLib
+  UefiDriverEntryPoint
+
+[Protocols]
+  gEfiBlockIoProtocolGuid     ## PRODUCES
+  gEfiDevicePathProtocolGuid  ## PRODUCES
+
+[Depex]
+  TRUE

@@ -1,6 +1,6 @@
 name: UEFI probe
 
-# Independent firmware bring-up: no kernel, IPSW, payload or installation seed.
+# Firmware bring-up; full reuses an audited package without rebuilding XNU.
 on:
   push:
     branches: ["codex/uefi-probe"]
@@ -8,10 +8,15 @@ on:
       - ".github/workflows/uefi-probe.yml"
       - "scripts/build-uefi-probe.py"
       - "scripts/check-uefi-probe.py"
+      - "scripts/check-uefi-kernel-probe.py"
       - "scripts/make-uefi-menu-volume.py"
+      - "scripts/repack-sheng-full-trial.py"
+      - "scripts/uefi_full_trial.py"
       - "package/UefiProbe/**"
       - "package/UefiMenu/**"
       - "package/UefiMenuDisk/**"
+      - "package/UefiKernelDisk/**"
+      - "package/UefiKernelProbe/**"
       - "board.toml"
   workflow_dispatch:
     inputs:
@@ -27,11 +32,16 @@ on:
       stage:
         description: "Independent firmware stage"
         type: choice
-        options: ["menu", "probe"]
+        options: ["full", "menu", "probe"]
         default: "menu"
+      full_package_run:
+        description: "Audited complete images-27 package run (full stage only)"
+        type: string
+        default: "43467452829"
 
 permissions:
   contents: read
+  actions: read
 
 concurrency:
   group: uefi-probe-${{ github.ref }}
@@ -77,12 +87,21 @@ jobs:
           done
       - name: offline probe contract checks
         run: python3 probe-sources/device/scripts/build-uefi-probe.py --self-test
+      - name: retrieve audited complete package
+        if: inputs.stage == 'full' || github.event_name == 'push'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          FULL_PACKAGE_RUN: ${{ inputs.full_package_run || '43467452829' }}
+        run: |
+          test "$FULL_PACKAGE_RUN" = 43467452829
+          gh run download "$FULL_PACKAGE_RUN" --repo "$GITHUB_REPOSITORY" --name images-27 --dir full-package
       - name: build isolated DEBUG probe
         env:
           PREPARE_ONLY: ${{ inputs.prepare_only }}
-          PROBE_STAGE: ${{ inputs.stage || 'menu' }}
+          PROBE_STAGE: ${{ inputs.stage || 'full' }}
         run: |
           args=(--unixnu probe-sources/UniXNU --uefi probe-sources/uefi-sheng --stage "$PROBE_STAGE" --output "probe-output-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}")
+          [ "$PROBE_STAGE" != full ] || args+=(--full-package full-package/ipados-27.0.1-24A446/sheng_ipados27)
           [ "$PREPARE_ONLY" != true ] || args+=(--prepare-only)
           python3 probe-sources/device/scripts/build-uefi-probe.py "${args[@]}" -j 4
       - name: preserve probe outputs and diagnostics
@@ -104,4 +123,6 @@ jobs:
             probe-output-${{ github.run_id }}-${{ github.run_attempt }}/SHA256SUMS
             probe-output-${{ github.run_id }}-${{ github.run_attempt }}/menu-volume.img
             probe-output-${{ github.run_id }}-${{ github.run_attempt }}/menu-volume.json
+            probe-output-${{ github.run_id }}-${{ github.run_attempt }}/full-trial-inputs.json
+            probe-output-${{ github.run_id }}-${{ github.run_attempt }}/full-volume.img
             probe-output-${{ github.run_id }}-${{ github.run_attempt }}/logs/**

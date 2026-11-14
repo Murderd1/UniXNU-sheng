@@ -1,0 +1,39 @@
+## @file
+#  Visible sheng ramdisk transport report and explicitly selected XNU handoff.
+#  The build supplies ShengFullTrialConfig.h beside this source.
+#
+#  Copyright (c) 2026, UniXNU contributors. All rights reserved.
+#  SPDX-License-Identifier: BSD-2-Clause-Patent
+##
+
+[Defines]
+  INF_VERSION    = 0x00010019
+  BASE_NAME      = ShengKernelProbe
+  FILE_GUID      = 9AE357D9-4CF7-4866-8351-9779B750DC14
+  MODULE_TYPE    = UEFI_APPLICATION
+  VERSION_STRING = 0.1
+  ENTRY_POINT    = ShengKernelProbeEntry
+
+[Sources]
+  ShengKernelProbe.c
+
+[Packages]
+  MdePkg/MdePkg.dec
+  UniXNUPkg/UniXNUPkg.dec
+
+[LibraryClasses]
+  BaseLib
+  BaseMemoryLib
+  MemoryAllocationLib
+  PrintLib
+  UefiApplicationEntryPoint
+  UefiBootServicesTableLib
+  UefiLib
+
+[Guids]
+  gEfiFileInfoGuid                 ## CONSUMES
+
+[Protocols]
+  gEfiBlockIoProtocolGuid           ## CONSUMES
+  gEfiSimpleFileSystemProtocolGuid  ## CONSUMES
+  gUniXNULoaderProtocolGuid         ## CONSUMES

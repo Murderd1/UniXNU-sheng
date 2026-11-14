@@ -204,3 +204,36 @@ Local frozen baselines are `out/baselines/stage-1-passed/` and
 `out/baselines/stage-2-passed/`. Each contains the accepted boot image, source
 identity, attributed device observations and SHA256SUMS. Build manifests retain
 their original host-only evidence flags; later device records are separate.
+
+## Stage 3 complete-kernel trial
+
+The owner requested trying the existing complete kernel before splitting it.
+`repack-sheng-full-trial.py` checks the audited package from run 43467452829,
+retains its complete kernel, ADT and runtime sidecars, changes the Android
+container to v4, removes installation, and requires physical confirmation.
+`data-persist=0` closes persistent Data writes and `log=0` closes the native UFS
+log/export path in the exact pinned ShengUfs and RamBlock sources. The root
+read path and other original peripheral arguments remain selected. Restored
+Android userdata lacks the SHNGROOT layout; this trial does not install it.
+
+Independent host comparison found exactly 2175 changed bytes, all within the
+Android header, FAT configuration allocation and its file-size field. All
+other payload files and the compressed BootShim/FD/DTB field remained equal.
+The candidate SHA-256 was
+`a28b4ed1d3fa39e141f1608ae4b836188cb309231afc4500e7c25e904db59e12`.
+Fastboot accepted the temporary boot. The owner then reported four menu items,
+a later failure message and power-off. The intended trial configuration has
+two entries and a `Sheng Full Trial` title. The four entries match the built-in
+fallback configuration, so payload discovery is the next diagnostic target.
+Neither DarwinBoot handoff nor XNU entry was observed.
+
+The independent `full` build variant retains the same full payload and adds a
+direct firmware diagnostic application. It reports the raw entry x0, FDT and
+initrd range, reserves the incoming buffers before DXE allocation, and checks
+the exact FAT boot sector and entire volume before publishing read-only Block
+I/O. A vendor ramdisk prefix may precede the FAT; bounded scanning identifies
+the expected bytes rather than treating the entire initrd as a FAT volume.
+The application stays visible without an automatic boot or shutdown. A
+separate physical confirmation can hand the verified full kernel and seed to
+the matching DarwinBoot revision. These are implementation details, not device
+success evidence; stage 3 remains unpassed until actual kernel observations.

@@ -432,7 +432,8 @@ driver digest constants, 55 FFS checksums and 32 APRIORI references agree.
 
 At 2026-11-14 09:18 UTC, temporary boot of serial 33b62981 returned sending and
 booting OKAY. No partition-write command was used. The owner had returned from
-Android to Fastboot; screen and root-check observations remain pending.
+Android to Fastboot. The later owner photographs show a UEFI exception before
+the XNU branch; no root-check result was obtained in this run.
 
 The restored CN factory package's primary/backup GPT CRCs pass. Its userdata
 entry is number 29 and begins at 0x2f3840, agreeing with the root-image
@@ -519,3 +520,28 @@ invalidation, SCTLR changes, TLBI and branch sequence remain byte-identical.
 The complete FAT/kernel and 795-byte handoff argument string are unchanged.
 The hypothesis requires the next actual device result; a successful build is
 not evidence of a corrected handoff or completed root stage.
+
+## Built self-code clean comparison
+
+Run [43586887818](https://github.com/Murderd1/UniXNU-sheng/actions/runs/43586887818)
+at device source `758eef9e95788357dff6b1a87ff2cfe5a572232b` passed the macOS
+host checks and firmware build. Build ID is
+`sheng-full-758eef9e9578-21a4caba2801-20261114T104820Z`.
+The downloaded v3 boot image is 185311232 bytes with SHA-256
+`e3d6e4cab37d664bb2fd06a533be6f87dad4ea248e09421655fd0c24044273d7`;
+the FD digest is `4e323c6ca24a0e4a67034c6fefa2b526745c6e8f9781097537109856b7527ba6`.
+
+All nine download digests pass. Independent actual-FD parsing confirms
+DarwinEnter at RVA 0x6f000 grows from 148 to 180 bytes. Its original 96-byte
+prefix and 52-byte suffix remain identical; the eight new instructions cover
+the complete [0x6f000, 0x6f0b4) range. The TLBI is preserved. DarwinBoot's
+other 102 executable sections, all 47 other PE images' executable sections
+and the SEC TE executable section are byte-identical to the accepted baseline.
+The complete FAT and the unique 795-byte app argument string are unchanged.
+Source hashes, overlay patch and provenance also pass independent inspection.
+
+At 2026-11-14 11:05 UTC, serial 33b62981 was confirmed as sheng in bootloader
+Fastboot and accepted one temporary boot with sending/booting OKAY. The local
+`out/handoff-code-clean-43586887818-1/` directory retains the independent
+report, preflight and device command record. Screen and root-check evidence
+are pending. This is not a root-mount or completed stage-4 result.

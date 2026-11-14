@@ -475,3 +475,47 @@ this failed artifact and the separately accepted stage-3 baseline. Diagnose
 the loader handoff and preserve the first exception report before changing
 TLBI/MMU behavior or installing a root image. The current photograph does not
 qualify probe 10 execution or identify a root-manifest failure.
+
+
+## First exception header and self-code cache comparison
+
+The owner supplied the first screen from the same run. Its retained original
+`device-first-uefi-exception.jpg` has SHA-256
+`d50fe25b983ef9e788c0946bafde270e475f27d96757c1945bb7ad48792a7c32`.
+It explicitly identifies `Synchronous Exception at 0xc239f084` and
+`PC 0xc239f084 (0xc2330000+0x6f084) [0] DarwinBoot.pdb`. This confirms the
+runtime image base and location at the actual PE's `tlbi vmalle1`; localization
+is no longer inferred from candidate addresses. The cause remains unknown.
+The following frame is DarwinBoot+0x37b0. The pre-handoff log reports EL1 and
+SCTLR_EL1 0x30d0180d. The green band is drawn before the kernel branch.
+
+Independent comparison confirms all 103 executable sections of DarwinBoot,
+including the complete terminal handoff, are identical to the accepted stage-3
+image. TLBI after clearing SCTLR.M is architecturally valid. A hypervisor trap
+cannot be diagnosed solely from this EC 0 report, and TLBI is not removed or
+moved in the next comparison.
+
+The pinned PE loader calls InvalidateInstructionCacheRange after relocation
+(Mu MdeModulePkg/Core/Dxe/Image/Image.c:809-817). The selected Arm cache library
+cleans data to PoU and invalidates instructions to PoU, rather than promising
+PoC (ArmPkg/Library/ArmCacheMaintenanceLib/ArmCacheMaintenanceLib.c:61-81).
+DarwinEnter cleans the owned kernel range with DC CIVAC, but its own executable
+range is outside that window. Its MMU/cache-off continuation therefore needs
+explicit code visibility beyond the load-time PoU synchronization. This is a
+plausible gap, not proof that the observed instruction bytes were stale.
+
+Linux uses the same defensive transition requirement: arm64 v6.12 head.S:109-116
+cleans its identity-mapped primary code to PoC when entered with MMU and caches
+on so it can execute with MMU off:
+https://github.com/torvalds/linux/blob/v6.12/arch/arm64/kernel/head.S#L109
+The board's existing BootShim likewise cleans copied FD code with DC CVAC
+before instruction invalidation and execution.
+
+The opt-in --handoff-code-clean comparison applies only to the full read-only
+root trial in an isolated pinned DarwinBoot checkout. It rejects changed source
+bytes. Local start/end labels bound DarwinEnter, and an added cache-line loop
+cleans that entire range to PoC with DC CVAC and DSB. The kernel clean, IC
+invalidation, SCTLR changes, TLBI and branch sequence remain byte-identical.
+The complete FAT/kernel and 795-byte handoff argument string are unchanged.
+The hypothesis requires the next actual device result; a successful build is
+not evidence of a corrected handoff or completed root stage.

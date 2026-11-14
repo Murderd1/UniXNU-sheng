@@ -85,6 +85,12 @@ manifest status, then stops at the diagnostic panic. Persistent Data and UFS
 log writes stay disabled. The uploaded artifact carries the FAT once inside
 `boot.img`; extract its Android ramdisk to verify `full-volume.img`'s recorded hash.
 
+The opt-in `--handoff-code-clean` comparison requires that full read-only mode.
+It cleans the executing DarwinEnter range to PoC before the existing MMU/cache
+shutdown sequence. It preserves TLBI, all payload bytes and the accepted kernel
+arguments. This tests the photographed loader exception; hardware success must
+be recorded separately. Actions exposes the same option.
+
 First restore a matching official Android package, retain the unlocked
 bootloader, and verify Android boot and Fastboot detection. One complete
 successful probe run satisfies the owner's acceptance requirement: a matching

@@ -165,4 +165,42 @@ file and skips `SetupSecureBoot`, including its key enrollment and filesystem
 callback. This does not alter the stock bootloader or repository board file.
 No system or kernel is loaded. Stage 2 requires one device run showing the
 matching title, physical navigation, a visible Not Found error, file-loaded
-Hello build ID and return to the menu. These observations remain pending.
+Hello build ID and return to the menu. The owner confirmed all of these
+observations on the image identified below; stage 2 passed once.
+
+
+### Stage 2 host build
+
+[Run 43562670561](https://github.com/Murderd1/UniXNU-sheng/actions/runs/43562670561)
+completed both DEBUG build passes at source revision
+`e48871c4a505247e78059c463feba1861a06efff`. The downloaded artifact passed
+all nine checksum entries, v4 header, empty ramdisk, embedded FD byte equality
+and splash-region checks. Its build ID is
+`sheng-menu-e48871c4a505-cf463b8c91d5-20261114T054147Z`.
+
+| Output | Bytes | SHA-256 |
+| --- | ---: | --- |
+| `boot.img` | 786432 | `c7b0bf23f71098f9b829a762d41fcf3b81e1f4e274721c00b669d096026ce51a` |
+| `SILICIUM_UEFI.fd` | 3145728 | `49523b1f24e516f695f2aecafd0b729a4df5f0147969ca760878e6298380eae4` |
+| `menu-volume.img` | 4194304 | `8119d4f85e90aa1d0b935ad11efe6cf1c6202fcf899195df57f8839294a3ff0a` |
+
+The FV inspection found 56 files, 32 APRIORI references with none dangling,
+the normal UniXNU app and the exact verified menu FAT. Both files were read
+back from FAT byte for byte. A temporary boot command returned `OKAY` at
+2026-11-14 05:50 UTC; device menu and file observations are recorded separately.
+
+
+### Stage 2 device acceptance
+
+The owner confirmed the expected `Sheng Stage 2` title and build ID containing
+`e48871c4a505`, all three entries and physical volume-key navigation. Selecting
+the missing-file entry and confirming produced a visible `Not Found` error.
+Selecting Hello then showed its matching build ID and returned to the menu
+after the pause. This is one complete successful device run, as requested by
+the owner; stage 2 is passed. No OS or XNU was started and no partition-write
+command was issued. The tablet remains at the menu.
+
+Local frozen baselines are `out/baselines/stage-1-passed/` and
+`out/baselines/stage-2-passed/`. Each contains the accepted boot image, source
+identity, attributed device observations and SHA256SUMS. Build manifests retain
+their original host-only evidence flags; later device records are separate.

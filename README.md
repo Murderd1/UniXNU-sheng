@@ -96,6 +96,7 @@ automatic countdown or rotation. Use volume keys to select and a short power
 press to enter or confirm. First verify the expected missing-file error, then
 run Hello and observe its matching build ID and return to the menu after
 15 seconds. One complete successful run satisfies this stage's acceptance.
+This stage passed on the image from [run 43562670561](https://github.com/Murderd1/UniXNU-sheng/actions/runs/43562670561); the owner confirmed menu navigation, the visible Not Found error and Hello returning to the menu.
 
 ```sh
 python3 scripts/build-uefi-probe.py --stage menu --unixnu ../UniXNU --uefi ../uefi-sheng --output out/uefi-menu-001

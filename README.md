@@ -70,19 +70,43 @@ Each output directory must be new. The build changes isolated source copies,
 embeds the probe instead of the normal boot manager, and removes DarwinBoot.
 It produces `boot.img`, `SILICIUM_UEFI.fd`, input hashes, a manifest and logs.
 `--prepare-only` prepares sources without importing stock files or compiling.
-Host checks and successful builds leave hardware verification pending.
+Host checks and successful builds alone do not establish hardware acceptance.
 
 First restore a matching official Android package, retain the unlocked
-bootloader, and verify Android boot and Fastboot detection. Then qualify the
-probe on three cold boots, each with five minutes of visible heartbeat and a
-real key response. Record the displayed build ID, image hash and return to
-Fastboot for every run. The probe stays in UEFI and never starts an OS.
+bootloader, and verify Android boot and Fastboot detection. One complete
+successful probe run satisfies the owner's acceptance requirement: a matching
+displayed build ID, at least 300 visible one-second heartbeat ticks, a real key
+response and a demonstrated return to Fastboot. Save the image hash and
+observations. The tested v4 candidate passed these checks; three cold-boot
+repetitions were not performed and the owner waived them. Stage 1 is passed.
+The probe stays in UEFI and never starts an OS.
 `R` then `Y` requests an ordinary restart; use the hardware key combination
 to enter Fastboot. See [the staged bring-up record](reports/uefi-bringup.md).
 
 The test image consumes the board's existing firmware input even when the
 Android recovery baseline uses a different regional package. Record both
 versions when investigating the bootloader handoff.
+
+## Menu and file fixture
+
+The workflow's `menu` stage restores UniXNU and embeds a 4 MiB read-only FAT16
+volume. It contains `EFI/UniXNU/unixnu.toml` and a file-loaded `HelloPayload.efi`.
+All three menu entries require confirmation, and the isolated menu has no
+automatic countdown or rotation. Use volume keys to select and a short power
+press to enter or confirm. First verify the expected missing-file error, then
+run Hello and observe its matching build ID and return to the menu after
+15 seconds. One complete successful run satisfies this stage's acceptance.
+
+```sh
+python3 scripts/build-uefi-probe.py --stage menu --unixnu ../UniXNU --uefi ../uefi-sheng --output out/uefi-menu-001
+```
+
+This stage embeds its own test volume so it needs no boot ramdisk or
+`vendor_boot` write. Its isolated research firmware accepts the test EFI file
+and skips automatic key enrollment and filesystem security-policy callbacks.
+The stock bootloader and `board.toml` remain intact. It does not contain
+DarwinBoot, XNU, OS files or an installation image. Build and volume hashes
+remain separate from device observations.
 
 ## Build
 

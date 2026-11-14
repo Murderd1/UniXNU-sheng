@@ -8,7 +8,10 @@ on:
       - ".github/workflows/uefi-probe.yml"
       - "scripts/build-uefi-probe.py"
       - "scripts/check-uefi-probe.py"
+      - "scripts/make-uefi-menu-volume.py"
       - "package/UefiProbe/**"
+      - "package/UefiMenu/**"
+      - "package/UefiMenuDisk/**"
       - "board.toml"
   workflow_dispatch:
     inputs:
@@ -21,6 +24,11 @@ on:
         description: "Prepare isolated sources only; no stock import or firmware compilation"
         type: boolean
         default: false
+      stage:
+        description: "Independent firmware stage"
+        type: choice
+        options: ["menu", "probe"]
+        default: "menu"
 
 permissions:
   contents: read
@@ -56,7 +64,7 @@ jobs:
           submodules: false
       - name: firmware tools
         run: |
-          formulas="python@3.13 dtc llvm lld cmake"
+          formulas="python@3.13 dtc llvm lld cmake mtools"
           brew install --formula $formulas || { brew link --overwrite python@3.13; brew install --formula $formulas; }
           python_bin="$(brew --prefix python@3.13)/libexec/bin"
           llvm_bin="$(brew --prefix llvm)/bin"
@@ -64,7 +72,7 @@ jobs:
           export PATH="$python_bin:$(brew --prefix)/bin:/usr/bin:/bin:/usr/sbin:/sbin:$llvm_bin:$lld_bin"
           echo "PATH=$PATH" >> "$GITHUB_ENV"
           python3 -c 'import sys; assert sys.version_info >= (3, 11)'
-          for tool in clang make git cmake dtc fdtget fdtput llvm-objcopy llvm-nm lld-link llvm-lib llvm-rc; do
+          for tool in clang make git cmake dtc fdtget fdtput llvm-objcopy llvm-nm lld-link llvm-lib llvm-rc mformat mcopy mdir; do
             command -v "$tool" >/dev/null || { echo "Missing firmware tool: $tool" >&2; exit 1; }
           done
       - name: offline probe contract checks
@@ -72,8 +80,9 @@ jobs:
       - name: build isolated DEBUG probe
         env:
           PREPARE_ONLY: ${{ inputs.prepare_only }}
+          PROBE_STAGE: ${{ inputs.stage || 'menu' }}
         run: |
-          args=(--unixnu probe-sources/UniXNU --uefi probe-sources/uefi-sheng --output "probe-output-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}")
+          args=(--unixnu probe-sources/UniXNU --uefi probe-sources/uefi-sheng --stage "$PROBE_STAGE" --output "probe-output-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}")
           [ "$PREPARE_ONLY" != true ] || args+=(--prepare-only)
           python3 probe-sources/device/scripts/build-uefi-probe.py "${args[@]}" -j 4
       - name: preserve probe outputs and diagnostics
@@ -93,4 +102,6 @@ jobs:
             probe-output-${{ github.run_id }}-${{ github.run_attempt }}/stock-inputs.json
             probe-output-${{ github.run_id }}-${{ github.run_attempt }}/fv-check.json
             probe-output-${{ github.run_id }}-${{ github.run_attempt }}/SHA256SUMS
+            probe-output-${{ github.run_id }}-${{ github.run_attempt }}/menu-volume.img
+            probe-output-${{ github.run_id }}-${{ github.run_attempt }}/menu-volume.json
             probe-output-${{ github.run_id }}-${{ github.run_attempt }}/logs/**

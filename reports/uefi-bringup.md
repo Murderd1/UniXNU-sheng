@@ -1,12 +1,13 @@
 # Staged firmware bring-up
 
-The current development gate is a stable, interactive UEFI probe. A successful
-build or Fastboot `OKAY` response does not establish firmware execution.
+Stage 1 passed one complete device run under the owner's acceptance requirement.
+Development continues with the menu and file-reading stage. A successful build
+or Fastboot `OKAY` response alone does not establish firmware execution.
 
 | Stage | Observable result before continuing |
 | --- | --- |
-| 0. Stock baseline | Official Android starts normally on three starts and the host detects Fastboot. Keep the bootloader unlocked. |
-| 1. Standalone UEFI | Matching probe build ID, visible heartbeat for at least 300 one-second timer ticks, a received physical key, three cold boots and a demonstrated return to Fastboot. |
+| 0. Stock baseline | Official Android starts normally and the host detects Fastboot. One complete successful check is sufficient. Keep the bootloader unlocked. |
+| 1. Standalone UEFI | One complete successful run with a matching probe build ID, visible heartbeat for at least 300 one-second timer ticks, a received physical key and a demonstrated return to Fastboot. Passed on the tested v4 candidate. |
 | 2. Menu and payload | UniXNU reads its configuration and referenced payload files; missing files and drivers produce visible errors. |
 | 3. Kernel handoff | DarwinBoot validates the inputs and XNU reaches its entry and platform initialization checkpoints. |
 | 4. Storage and userland | Root and Data are available and launchd starts. |
@@ -27,8 +28,9 @@ The application draws an embedded bitmap font through GOP and reports
 `APP_ENTRY`, `GOP_READY`, `MENU_READY`, heartbeat and key events. It neither opens
 a filesystem nor launches another image. Missing GOP/input, timer failure and
 watchdog-disable failure prevent a run from satisfying its internal checks.
-The 300 timer ticks are a conservative observation interval, not proof of three
-cold boots or of visible output. Those checks remain manual.
+The 300 timer ticks are a conservative observation interval. Visible output,
+the matching build ID, physical input and the return to Fastboot require device
+observations. One complete successful run is sufficient for acceptance.
 
 The build adds SEC, DXE registration and BDS stage markers to isolated sources.
 The pinned platform maps early DEBUG output to FrameBufferSerialPortLib.
@@ -53,7 +55,8 @@ succeeded and Android completed a fresh boot. These tests used reboot and
 temporary boot commands; no partition-write command was issued.
 The supplied recovery directory is `sheng_images_OS3.0.303.0.WNXCNXM_16.0`;
 its `misc.txt` identifies sheng and the CN build, and its anti version is 1.
-That local recovery package is not a build input or a claimed successful boot.
+That local recovery package is separate from the pinned firmware build input;
+the successful stock temporary boot above used its matching `boot.img`.
 
 The owner subsequently chose to retain the repository's international firmware
 input. `board.toml` remains pinned to `OS3.0.305.0.WNXMIXM`, archive SHA-256
@@ -94,11 +97,15 @@ with a v4 header, preserving every following byte: gzip data, BootShim, FD,
 appended DTB and padding. The candidate image is 1150976 bytes, SHA-256
 `3eb9c7c59fccdff2505050ef11f487399d9c63cc5e2813210f4013941e6e6c27`.
 At 2026-11-14 05:05 UTC it was temporarily booted; the owner then reported a
-visible picture and responding volume keys. The owner subsequently confirmed the SHENG UEFI PROBE interface, a heartbeat
-above 300 and continuously responsive keys without a reset. Exact build-ID
-readback, hardware Fastboot recovery and three cold boots remain pending. The result establishes
-the container-version difference for this image and restored bootloader; it
-does not identify which internal ABL check caused the v0 failure.
+visible picture and responding volume keys. The owner subsequently confirmed
+the SHENG UEFI PROBE interface, the matching displayed build ID, a heartbeat
+above 300 and continuously responsive keys without a reset. Return to Fastboot
+using the hardware key combination was demonstrated. The owner accepts one
+complete successful run, so stage 1 is passed. Three cold-boot repetitions were
+not performed and were explicitly waived; they are not a pending action.
+The result establishes the container-version difference for this image and
+restored bootloader; it does not identify which internal ABL check caused the
+v0 failure.
 
 `build-uefi-probe.py` now overrides `header_version=4` and `pagesize=4096` in
 its isolated in-memory board copy. It records the override and effective image
@@ -106,19 +113,21 @@ settings in the manifest and checks the resulting header version. Repository
 `board.toml`, firmware inputs, compression, BootShim and drivers are unchanged.
 The independent build output still starts with no claimed hardware observations.
 
-## Device evidence to collect
+## Device acceptance record
 
-For each of the three runs, save the image hash and manifest, photograph the
-matching build ID and final run screen, record the physical key response and
-observe at least five minutes without a reset. Return manually to Fastboot and
-save host detection. Record failures and the last visible checkpoint before
-changing one input at a time. Do not mark stage 1 passed from the build report.
+One complete successful run is the acceptance requirement. Save the image hash
+and manifest, the matching displayed build ID and final run screen, the physical
+key response, at least 300 advancing one-second heartbeat ticks without a reset,
+and the demonstrated hardware return to Fastboot. These checks passed on the
+candidate identified above. Three cold-boot repetitions were not performed and
+the owner waived them. Record failures and the last visible checkpoint before
+changing one input at a time; a build report alone cannot pass this gate.
 
 Start input testing with a short volume-down press (`SCAN=0002`), followed by
 volume-up (`SCAN=0001`), and watch the `KEYS` count and `LAST` field. The
 unconditional `ShengKeyInputDxe` supplies this path in the minimal firmware;
-its SPMI access still requires device verification. A short power press maps
-to return (`CHAR=000D`). The minimal branch does not initialize USB host
+its physical volume-key input was verified in the accepted run. A short power
+press maps to return (`CHAR=000D`). The minimal branch does not initialize USB host
 hardware, and the framebuffer serial library cannot receive characters, so
 USB keyboard support and the character commands `C/R/Y` are not acceptance
 requirements. Use the device's hardware combination to return to Fastboot.
@@ -127,3 +136,33 @@ If `fastboot boot` also rejects the corresponding stock boot image, investigate
 that boot method first. A `Load Error` alone does not identify a UEFI driver
 failure. The historical notes in ignored output directories are not evidence
 for a newly built probe.
+
+## Stage 2 implementation
+
+The `--stage menu` variant restores the pinned normal UniXNU application,
+retains the minimal hardware path and removes DarwinBoot. It embeds a 4 MiB
+FAT16 image in FV RAW file `79D77DA6-3053-4705-9B3C-18750AE7C3F1`.
+`ShengMenuDiskDxe` publishes that image as read-only 512-byte Block I/O;
+existing DiskIo and FAT drivers provide filesystem access. This avoids an
+unproven GKI boot-ramdisk handoff without writing `vendor_boot` or userdata.
+
+The build first compiles HelloPayload, builds the FAT fixture, reads both
+files back with mtools, then rebuilds the final FD. Decompressed FV inspection
+requires the embedded RAW SHA-256 to match the verified FAT. The manifest
+records source, file, volume and final-image hashes and starts without device
+observations. Host driver checks cover read boundaries, media errors, write
+protection, installation notification and failure cleanup against real headers.
+
+The menu reads `EFI/UniXNU/unixnu.toml` and shows a build-linked title. Its
+default item deliberately refers to an absent EFI file. The second item reads
+and starts `Payloads/HelloPayload.efi`, which prints the same build ID and
+returns after 15 seconds. The third item powers off. Each item requires a
+physical confirmation, with countdown and rotation disabled in the isolated
+menu source. Missing input cannot select an item automatically.
+
+The isolated research firmware sets `ENABLE_SECUREBOOT=0` to permit the test
+file and skips `SetupSecureBoot`, including its key enrollment and filesystem
+callback. This does not alter the stock bootloader or repository board file.
+No system or kernel is loaded. Stage 2 requires one device run showing the
+matching title, physical navigation, a visible Not Found error, file-loaded
+Hello build ID and return to the menu. These observations remain pending.

@@ -1,0 +1,37 @@
+## @file
+#  Read-only firmware FAT disk for the isolated sheng stage 2 build.
+#  RAW payload FFS GUID: 79D77DA6-3053-4705-9B3C-18750AE7C3F1.
+#
+#  Copyright (c) 2026, UniXNU contributors. All rights reserved.
+#  SPDX-License-Identifier: BSD-2-Clause-Patent
+##
+
+[Defines]
+  INF_VERSION    = 0x0001001B
+  BASE_NAME      = ShengMenuDiskDxe
+  FILE_GUID      = 3C4AB25F-A83A-4DB1-87B0-0807F907CC93
+  MODULE_TYPE    = DXE_DRIVER
+  VERSION_STRING = 0.1
+  ENTRY_POINT    = ShengMenuDiskDxeEntry
+
+[Sources]
+  ShengMenuDiskDxe.c
+
+[Packages]
+  MdePkg/MdePkg.dec
+
+[LibraryClasses]
+  BaseMemoryLib
+  DebugLib
+  DxeServicesLib
+  MemoryAllocationLib
+  UefiBootServicesTableLib
+  UefiDriverEntryPoint
+
+[Protocols]
+  gEfiFirmwareVolume2ProtocolGuid  ## CONSUMES
+  gEfiBlockIoProtocolGuid          ## PRODUCES
+  gEfiDevicePathProtocolGuid       ## PRODUCES
+
+[Depex]
+  gEfiFirmwareVolume2ProtocolGuid

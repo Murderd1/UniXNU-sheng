@@ -9,6 +9,7 @@ import argparse
 import copy
 from datetime import datetime, timezone
 import hashlib
+import importlib.util
 import json
 import os
 from pathlib import Path
@@ -26,6 +27,9 @@ UEFI_COMMIT = '66421cb7bb5694843aec8de1ca3d1de4c20cca38'
 EDK2_COMMIT = 'cfb93724a06ff86ff5ba971413368a7809ee42a5'
 APP_GUID = '9B665204-A133-47A2-9396-9E2B370A4E25'
 PROBE_BOOT_IMAGE = {'header_version': 4, 'pagesize': 4096}
+MENU_PAYLOAD_GUID = '79D77DA6-3053-4705-9B3C-18750AE7C3F1'
+MENU_DISK_INF = 'UefiMenuDisk/ShengMenuDiskDxe.inf'
+HELLO_INF = 'UniXNUPkg/Test/HelloPayload/HelloPayload.inf'
 NORMAL_APP = 'UniXNUPkg/Application/UniXNU/UniXNU.inf'
 PROBE_APP = 'UniXNUPkg/Application/ShengUefiProbe/ShengUefiProbe.inf'
 DARWIN_INF = 'DarwinBootPkg/Driver/DarwinBoot.inf'
@@ -182,22 +186,71 @@ def integrate_probe(uefi, tree, app_dir, build_id):
     return changed
 
 
-def source_identity():
+def integrate_menu(uefi, tree, build_id):
+    """Reuse the proven minimal firmware with UniXNU and a read-only file disk."""
+    changed = integrate_probe(uefi, tree, ROOT / 'package/UefiProbe', build_id)
+    for relative in (PLATFORM / 'sheng.dsc', PLATFORM / 'sheng.fdf'):
+        replace_once(uefi / relative, PROBE_APP, NORMAL_APP)
+    shutil.copytree(ROOT / 'package/UefiMenuDisk', tree / 'package/UefiMenuDisk')
+    dsc = uefi / PLATFORM / 'sheng.dsc'
+    with dsc.open('a', encoding='utf-8') as stream:
+        stream.write('\n[Components]\n  ' + MENU_DISK_INF + '\n  ' + HELLO_INF + '\n')
+        stream.write('\n[PcdsFixedAtBuild]\n  gUniXNUPkgTokenSpaceGuid.PcdUniXNUDebugLevel|0x00000002\n')
+    raw = uefi / 'Stage2Menu/menu-fat.img'
+    raw.parent.mkdir()
+    raw.write_bytes(b'\0' * 512)  # First pass builds HelloPayload; final pass embeds the verified FAT.
+    replace_once(uefi / PLATFORM / 'sheng.fdf', '  # IORT DT',
+                 '  INF ' + MENU_DISK_INF + '\n'
+                 '  FILE FREEFORM = ' + MENU_PAYLOAD_GUID + ' {\n'
+                 '    SECTION RAW = Stage2Menu/menu-fat.img\n'
+                 '    SECTION UI = "ShengMenuFiles"\n'
+                 '  }\n\n  # IORT DT')
+    secure = Path('Silicon/Silicium/SiliciumPkg/Library/BootManagerLib/BootManager.c')
+    replace_once(uefi / secure,
+                 'PlatformBootManagerBdsEntry ()\n{\n  EFI_STATUS Status;',
+                 'PlatformBootManagerBdsEntry ()\n{')
+    replace_once(uefi / secure,
+                 '  // Setup Secure Boot\n  Status = SetupSecureBoot ();\n  ASSERT_EFI_ERROR (Status);',
+                 '  // Standalone menu research firmware: no key enrollment or filesystem callback.\n'
+                 '  DEBUG ((DEBUG_WARN, "SHENGMENU: isolated file-loader policy; no key enrollment\\n"));')
+    changed.append(str(secure))
+    menu = Path('package/UniXNUPkg/Library/UniXNULib/Menu.c')
+    replace_once(tree / menu, '  RotateMs = Config->RotateSeconds * 1000;',
+                 '  // Stage 2 waits for physical selection; missing input never starts a file.\n'
+                 '  RemainingMs = -1;\n  RotateMs = Config->RotateSeconds * 1000;')
+    replace_once(tree / menu, '  UniXNUUiDrawFrame (Ui, Config);',
+                 '  RotateMs = 0;\n  UniXNUUiDrawFrame (Ui, Config);')
+    changed.append('tree/' + str(menu))
+    hello_source = Path('package/UniXNUPkg/Test/HelloPayload/HelloPayload.c')
+    replace_once(tree / hello_source,
+                 '  Print (L"UNIXNU-HELLO: Hello from the UniXNU test payload\\n");',
+                 '  Print (L"UNIXNU-HELLO: Hello from the UniXNU test payload\\n");\n'
+                 '  Print (L"SHENG MENU FILE: ' + build_id + '\\n");')
+    changed.append('tree/' + str(hello_source))
+    return changed
+
+
+def source_identity(stage='probe'):
     files = [ROOT / 'board.toml', Path(__file__),
              *sorted((ROOT / 'package/UefiProbe').glob('*')),
              *(ROOT / 'scripts' / name for name in PREFLIGHT_SCRIPTS)]
+    if stage == 'menu':
+        files += [ROOT / 'scripts/make-uefi-menu-volume.py',
+                  *sorted((ROOT / 'package/UefiMenuDisk').glob('*')),
+                  *sorted((ROOT / 'package/UefiMenu').glob('*'))]
     hashes = {path.relative_to(ROOT).as_posix(): digest(path) for path in files if path.is_file()}
     combined = hashlib.sha256(json.dumps(hashes, sort_keys=True).encode()).hexdigest()
     return hashes, combined
 
 
-def verify_firmware(uefi, tree, fd, build_id, logs, env):
+def verify_firmware(uefi, tree, fd, build_id, logs, env, menu_report=None):
     """Inspect the decompressed FV, not strings in a compressed FD blob."""
     (tree / 'uefi-sheng').symlink_to(uefi, target_is_directory=True)
     command([sys.executable, tree / 'scripts/check-sheng-fv.py'], cwd=tree,
             env=env, log=logs / 'firmware-volume.log')
     report = json.loads((tree / 'build/sheng/fv-check.json').read_text())
     app_found = False
+    menu_found = False
     for info in fd.with_name(fd.name + '.dump').rglob('info.txt'):
         fields = {}
         for line in info.read_text(errors='replace').splitlines():
@@ -208,17 +261,29 @@ def verify_firmware(uefi, tree, fd, build_id, logs, env):
             continue
         if fields.get('Text') == 'DarwinBoot':
             raise ProbeError('DarwinBoot remains in the assembled firmware volume')
+        if fields.get('File GUID', '').upper() == MENU_PAYLOAD_GUID:
+            if menu_report is None or menu_found:
+                raise ProbeError('Unexpected or duplicate embedded menu volume')
+            menu_found = any(digest(body) == menu_report['sha256'] for body in info.parent.rglob('body.bin'))
+            if not menu_found:
+                raise ProbeError('Embedded FAT image does not match the verified volume')
         if fields.get('File GUID', '').upper() != APP_GUID:
             continue
-        if app_found or fields.get('Text') != 'ShengUefiProbe':
-            raise ProbeError('Firmware application GUID does not identify one ShengUefiProbe')
-        app_found = any(build_id.encode('ascii') in body.read_bytes() for body in info.parent.rglob('body.bin'))
-        if not app_found:
+        expected_app = 'ShengUefiProbe' if menu_report is None else 'UniXNU'
+        if app_found or fields.get('Text') != expected_app:
+            raise ProbeError(f'Firmware application GUID does not identify one {expected_app}')
+        app_found = True
+        if menu_report is None and not any(build_id.encode('ascii') in body.read_bytes() for body in info.parent.rglob('body.bin')):
             raise ProbeError('Built application does not contain the expected build ID')
     if not app_found:
         raise ProbeError('Standalone probe application absent from decompressed FV')
+    if menu_report is not None and not menu_found:
+        raise ProbeError('Menu FAT image absent from decompressed FV')
     report.update(probe_application_guid=APP_GUID, probe_build_id=build_id, probe_app_verified=True,
                   hardware_tested=False)
+    if menu_report is not None:
+        report.update(menu_volume_verified=True, menu_volume_sha256=menu_report['sha256'],
+                      menu_config_build_id=build_id)
     return report
 
 
@@ -228,7 +293,7 @@ def checkpoints_document():
         'bootshim': 'No UART or display checkpoint before SEC debug initialization; BootShim execution is not asserted.',
         'early_output': 'Pinned DEBUG firmware maps SerialPortLib to FrameBufferSerialPortLib. SEC, DXE and BDS DEBUG markers draw into the inherited framebuffer, not a physical UART. Photograph or video this output; its visibility depends on the stock display handoff.',
         'gop': 'GOP_READY is emitted by the application only after a successful GOP Blt.',
-        'acceptance': 'On the device: matching build ID, visible heartbeat for at least 300 timer ticks, input response, and three cold boots. Host build success does not satisfy these checks.',
+        'acceptance': 'One complete device run: matching build ID, visible heartbeat for at least 300 timer ticks, input response and manual Fastboot return. Host build success does not satisfy these checks.',
     }
 
 
@@ -249,6 +314,12 @@ def self_test():
             raise ProbeError(f'Probe checkpoint missing: {checkpoint}')
     if checkpoints_document()['observed'] or checkpoints_document()['hardware_tested']:
         raise ProbeError('Host checks must not claim device observations')
+    module_spec = importlib.util.spec_from_file_location('menu_volume', ROOT / 'scripts/make-uefi-menu-volume.py')
+    menu_volume = importlib.util.module_from_spec(module_spec)
+    module_spec.loader.exec_module(menu_volume)
+    menu_volume.render_config('self-test')
+    if MENU_PAYLOAD_GUID.lower() not in (ROOT / 'package/UefiMenuDisk/ShengMenuDiskDxe.inf').read_text().lower():
+        raise ProbeError('Menu disk RAW GUID contract changed')
     print('PASS: GUID, standalone dependencies, build ID, checkpoints and evidence separation')
 
 
@@ -260,9 +331,10 @@ def build(args):
         raise ProbeError('Full build requires macOS for the pinned UEFIExtract importer; use --self-test on this host')
     require_pin(args.unixnu, TOOLS_COMMIT)
     require_pin(args.uefi, UEFI_COMMIT)
-    hashes, identity = source_identity()
+    hashes, identity = source_identity(args.stage)
     revision = git(ROOT, 'rev-parse', 'HEAD')
-    build_id = args.build_id or f'sheng-uefi-{revision[:12]}-{identity[:12]}-{datetime.now(timezone.utc):%Y%m%dT%H%M%SZ}'
+    prefix = 'sheng-uefi' if args.stage == 'probe' else 'sheng-menu'
+    build_id = args.build_id or f'{prefix}-{revision[:12]}-{identity[:12]}-{datetime.now(timezone.utc):%Y%m%dT%H%M%SZ}'
     if not re.fullmatch(r'[A-Za-z0-9_.-]{1,96}', build_id):
         raise ProbeError('--build-id must be 1-96 ASCII letters, digits, dots, underscores or hyphens')
     output.mkdir(parents=True)
@@ -272,7 +344,7 @@ def build(args):
     work.mkdir()
     tree, tools, uefi = work / 'tree', work / 'tools', work / 'uefi'
     tree.mkdir()
-    manifest = {'schema_version': 1, 'kind': 'sheng-uefi-probe', 'status': 'preparing',
+    manifest = {'schema_version': 1, 'kind': prefix, 'stage': args.stage, 'status': 'preparing',
                 'build_id': build_id, 'target': 'DEBUG', 'hardware_tested': False,
                 'bootloader_acceptance_proven': False, 'source_identity_sha256': identity,
                 'source_files_sha256': hashes, 'revisions': {'device': revision, 'tools': TOOLS_COMMIT,
@@ -280,7 +352,13 @@ def build(args):
                 'excluded_stages': ['kernel', 'payload', 'Data seed', 'IPSW', 'userdata flashing'],
                 'device_commands_executed': False}
     write_json(output / 'manifest.json', manifest)
-    write_json(output / 'checkpoints.json', checkpoints_document())
+    checkpoints = checkpoints_document()
+    if args.stage == 'menu':
+        checkpoints.update(expected=['SHENGMENUDISK: published', 'UNIXNU: config:', 'UNIXNU: menu:',
+                                     'Expected missing file error returned: Not Found', 'UNIXNU-HELLO: Hello',
+                                     'SHENG MENU FILE: ' + build_id, 'Hello file probe returned: Success'],
+                           acceptance='One device run: matching menu title/build ID, physical selection, visible Not Found error, file-loaded Hello build ID and return to menu; no OS starts.')
+    write_json(output / 'checkpoints.json', checkpoints)
     try:
         clone_local(args.unixnu, tools, TOOLS_COMMIT, logs / 'sources.log')
         clone_local(args.uefi, uefi, UEFI_COMMIT, logs / 'sources.log')
@@ -299,7 +377,12 @@ def build(args):
         for name in PREFLIGHT_SCRIPTS:
             shutil.copy2(ROOT / 'scripts' / name, tree / 'scripts' / name)
         shutil.copy2(ROOT / 'board.toml', tree / 'board.toml')
-        manifest['isolated_changes'] = integrate_probe(uefi, tree, ROOT / 'package/UefiProbe', build_id)
+        if args.stage == 'menu':
+            manifest['isolated_changes'] = integrate_menu(uefi, tree, build_id)
+            board['firmware']['defines']['ENABLE_SECUREBOOT'] = '0'
+            manifest['file_loader_policy'] = 'Isolated research firmware accepts test EFI files; no key enrollment or filesystem secure-boot callback. Stock bootloader and repository board remain unchanged.'
+        else:
+            manifest['isolated_changes'] = integrate_probe(uefi, tree, ROOT / 'package/UefiProbe', build_id)
         (logs / 'firmware-source-overlay.patch').write_text(git(uefi, 'diff', '--ignore-submodules=all'), encoding='utf-8')
         manifest['isolated_sources_sha256'] = {
             relative: digest(tree / relative[5:] if relative.startswith('tree/') else uefi / relative)
@@ -346,7 +429,20 @@ def build(args):
         ctx = SimpleNamespace(board=board, args=SimpleNamespace(skip_preflight=True), tree=tree,
                               device=tree, work=work, logs=logs, jobs=args.jobs)
         fd = firmware_builder.build(ctx, {}, uefi, edk2, target='DEBUG')
-        fv_report = verify_firmware(uefi, tree, fd, build_id, logs, env)
+        menu_report = None
+        if args.stage == 'menu':
+            hello = fd.parent.parent / 'AARCH64/HelloPayload.efi'
+            menu_image = output / 'menu-volume.img'
+            command([sys.executable, ROOT / 'scripts/make-uefi-menu-volume.py',
+                     '--hello-efi', hello, '--build-id', build_id, '--output', menu_image],
+                    log=logs / 'menu-volume.log')
+            menu_report = json.loads(menu_image.with_suffix('.json').read_text())
+            if not menu_report['readback_verified']:
+                raise ProbeError('Menu volume file readback was not verified')
+            shutil.copy2(menu_image, uefi / 'Stage2Menu/menu-fat.img')
+            fd = firmware_builder.build(ctx, {}, uefi, edk2, target='DEBUG')
+            manifest['menu_volume'] = menu_report
+        fv_report = verify_firmware(uefi, tree, fd, build_id, logs, env, menu_report)
         write_json(output / 'fv-check.json', fv_report)
         shutil.copy2(fd, output / 'SILICIUM_UEFI.fd')
         image_settings, fd_base, fd_size, requires_header, _ = bootimg.settings(ctx, uefi)
@@ -363,7 +459,10 @@ def build(args):
             raise ProbeError('UEFI probe image must have no ramdisk and no hardware claim')
         for path in fd.parent.glob('*.Fv.map'):
             shutil.copy2(path, logs / path.name)
-        for name in ('boot.img', 'SILICIUM_UEFI.fd', 'boot.json', 'stock-inputs.json', 'fv-check.json'):
+        output_names = ['boot.img', 'SILICIUM_UEFI.fd', 'boot.json', 'stock-inputs.json', 'fv-check.json']
+        if args.stage == 'menu':
+            output_names += ['menu-volume.img', 'menu-volume.json']
+        for name in output_names:
             path = output / name
             manifest['outputs'][name] = {'bytes': path.stat().st_size, 'sha256': digest(path)}
         manifest['status'] = 'built'
@@ -384,6 +483,7 @@ def main():
     parser.add_argument('--uefi', type=Path, default=ROOT.parent / 'uefi-sheng', help=f'clean firmware checkout at {UEFI_COMMIT}')
     parser.add_argument('--output', type=Path, default=ROOT / 'out/uefi-probe', help='fresh output directory (must not exist)')
     parser.add_argument('--build-id', help='optional ASCII identifier; source hashes always remain in the manifest')
+    parser.add_argument('--stage', choices=('probe', 'menu'), default='probe', help='probe: standalone UI; menu: UniXNU with an embedded read-only FAT file fixture')
     parser.add_argument('-j', '--jobs', type=int, default=4)
     parser.add_argument('--prepare-only', action='store_true', help='stage isolated firmware sources and integration; do not import stock inputs or compile')
     parser.add_argument('--self-test', action='store_true', help='run offline standalone-app contract checks only')

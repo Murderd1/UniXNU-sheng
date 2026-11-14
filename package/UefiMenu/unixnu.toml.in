@@ -1,0 +1,35 @@
+# Stage 2 fixture: configuration and EFI file loading only.
+version = 1
+
+[boot]
+timeout = -1
+rotate = 0
+default = "missing"
+
+[ui]
+title = "Sheng Stage 2 - @BUILD_ID@"
+
+[kits]
+autoload = false
+
+[[entry]]
+id = "missing"
+title = "Expected missing file error"
+type = "efi"
+path = "Payloads/DoesNotExist.efi"
+confirm = "Run the expected missing file check?"
+
+[[entry]]
+id = "hello"
+title = "Hello file probe"
+type = "efi"
+path = "Payloads/HelloPayload.efi"
+args = "plain pause"
+confirm = "Run the EFI file probe?"
+
+[[entry]]
+id = "shutdown"
+title = "Power off"
+type = "action"
+action = "shutdown"
+confirm = "Power off the tablet?"

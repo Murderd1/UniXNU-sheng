@@ -342,7 +342,7 @@ DrawScreen (
               "RESTART ARMED: Y CONFIRMS - ANY OTHER KEY CANCELS" : "RESTART DOES NOT GUARANTEE FASTBOOT ENTRY");
   AsciiSPrint (Lines[13], sizeof (Lines[13]), "USE THE HARDWARE KEY COMBINATION FOR FASTBOOT");
   AsciiSPrint (Lines[14], sizeof (Lines[14]), "STAYS IN UEFI - NO AUTOMATIC OS START");
-  AsciiSPrint (Lines[15], sizeof (Lines[15]), "HARDWARE ACCEPTANCE: 3 COLD BOOTS + 5 MIN EACH");
+  AsciiSPrint (Lines[15], sizeof (Lines[15]), "HARDWARE ACCEPTANCE: ONE RUN + 5 MIN + FASTBOOT RETURN");
   AsciiSPrint (Lines[16], sizeof (Lines[16]), "CHECK VISIBLE HEARTBEAT AND KEY RESPONSE EACH RUN");
   AsciiSPrint (Lines[17], sizeof (Lines[17]), "VERIFY RETURN TO FASTBOOT AND HOST DETECTION");
   AsciiSPrint (Lines[18], sizeof (Lines[18]), "TIMER TICKS ARE A CONSERVATIVE MINIMUM DURATION");
@@ -532,7 +532,7 @@ ShengUefiProbeEntry (
 
     DrawScreen ();
     if (RunChecksMet () && !ReportedRunChecks) {
-      ProbeLog ("RUN_CHECKS_MET - verify visible output, three cold boots and Fastboot manually");
+      ProbeLog ("RUN_CHECKS_MET - verify visible output and Fastboot return manually");
       ReportedRunChecks = TRUE;
     }
   }

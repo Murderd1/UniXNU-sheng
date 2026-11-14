@@ -8,6 +8,7 @@
 
 static CONST CHAR16 *mTestArgs;
 static BOOLEAN mTestRootReadonly;
+static BOOLEAN mTestRootMedia;
 // Native AARCH64 hosts run at EL0 and cannot read CurrentEL. The separate
 // freestanding compile below keeps the firmware instruction enabled.
 #define SHENG_KERNEL_PROBE_HOST_TEST 1
@@ -161,6 +162,7 @@ static void initialize(void) {
   null_diagnostic=null_loader=no_input=fail_wait=zero_events=0;
   key_count=key_index=event_count=stop_events=0; draining=1;
   position=0; partial_bytes=3; seed_size=sizeof(seed); mTestArgs=safe_args; mTestRootReadonly=FALSE;
+  mTestRootMedia=FALSE;
   print_length=0; print_log[0]=0;
   open_volume_status=open_status=get_info_status=read_status=EFI_SUCCESS;
   diagnostic_status=loader_status=block_status=fs_status=EFI_SUCCESS;
@@ -227,6 +229,26 @@ static void run_ui(unsigned steps) {
 static void seed_failure(EFI_STATUS expected) {
   CHECK(BootFullKernel()==expected && boot_calls==0 && mBootAttempted); CHECK(allocations==frees && opened==closed);
   CHECK(BootFullKernel()==EFI_NOT_READY);
+}
+static void whitelist_rejections(CONST CHAR16 *canonical, BOOLEAN media_probe) {
+  CHAR16 altered[1024]; UINTN first,last,tail,length=StrLen(canonical);
+  CHECK(length==795 && length+20<sizeof(altered)/sizeof(altered[0]));
+  // Every omitted or mutated whitelist token must reject before a callback.
+  first=0;
+  while(first<length) {
+    last=first; while(last<length && canonical[last]!=L' ') last++;
+    CopyMem(altered,canonical,(length+1)*sizeof(CHAR16));
+    altered[first]=L'x';
+    initialize(); mTestRootReadonly=(BOOLEAN)!media_probe; mTestRootMedia=media_probe; mTestArgs=altered; rejected();
+    tail=last<length ? last+1 : last;
+    CopyMem(altered,canonical,first*sizeof(CHAR16));
+    CopyMem(altered+first,&canonical[tail],(length-tail+1)*sizeof(CHAR16));
+    initialize(); mTestRootReadonly=(BOOLEAN)!media_probe; mTestRootMedia=media_probe; mTestArgs=altered; rejected();
+    first=tail;
+  }
+  CopyMem(altered,canonical,(length+1)*sizeof(CHAR16));
+  CopyMem(altered+length,media_probe ? L" native-ufs-probe=12" : L" native-ufs-probe=10",20*sizeof(CHAR16));
+  initialize(); mTestRootReadonly=(BOOLEAN)!media_probe; mTestRootMedia=media_probe; mTestArgs=altered; rejected();
 }
 int main(void) {
   UINTN i;
@@ -304,26 +326,7 @@ int main(void) {
   initialize(); mTestRootReadonly=TRUE; mTestArgs=SHENG_ROOT_READONLY_ARGS; ready();
   CHECK(BootFullKernel()==EFI_ACCESS_DENIED && boot_calls==1 && read_calls==6);
   initialize(); mTestRootReadonly=TRUE; rejected();
-  // Every omitted or mutated whitelist token rejects the diagnostic handoff.
-  {
-    CHAR16 altered[1024]; UINTN first,last,tail,length=StrLen(SHENG_ROOT_READONLY_ARGS);
-    CHECK(length==795 && length+20<sizeof(altered)/sizeof(altered[0]));
-    first=0;
-    while(first<length) {
-      last=first; while(last<length && SHENG_ROOT_READONLY_ARGS[last]!=L' ') last++;
-      CopyMem(altered,SHENG_ROOT_READONLY_ARGS,(length+1)*sizeof(CHAR16));
-      altered[first]=L'x';
-      initialize(); mTestRootReadonly=TRUE; mTestArgs=altered; rejected();
-      tail=last<length ? last+1 : last;
-      CopyMem(altered,SHENG_ROOT_READONLY_ARGS,first*sizeof(CHAR16));
-      CopyMem(altered+first,&SHENG_ROOT_READONLY_ARGS[tail],(length-tail+1)*sizeof(CHAR16));
-      initialize(); mTestRootReadonly=TRUE; mTestArgs=altered; rejected();
-      first=tail;
-    }
-    CopyMem(altered,SHENG_ROOT_READONLY_ARGS,(length+1)*sizeof(CHAR16));
-    CopyMem(altered+length,L" native-ufs-probe=10",20*sizeof(CHAR16));
-    initialize(); mTestRootReadonly=TRUE; mTestArgs=altered; rejected();
-  }
+  whitelist_rejections(SHENG_ROOT_READONLY_ARGS,FALSE);
   initialize(); mTestRootReadonly=TRUE; mTestArgs=SHENG_ROOT_READONLY_ARGS;
   push(SCAN_UP,0); push(SCAN_UP,0); push(0,CHAR_CARRIAGE_RETURN); run_ui(3);
   CHECK(mConfirming && !mConfirmBoot && boot_calls==0);
@@ -338,7 +341,43 @@ int main(void) {
   CHECK(StrLen(mTestArgs)==775 && !mTestRootReadonly);
   CHECK(BootFullKernel()==EFI_ACCESS_DENIED && boot_calls==1 && read_calls==6);
   CHECK(BootFullKernel()==EFI_NOT_READY && boot_calls==1);
+  // Probe 12 uses the full kernel and seed; only its exact handoff differs.
+  initialize(); mTestRootMedia=TRUE; mTestArgs=SHENG_ROOT_MEDIA_ARGS; ready();
+  CHECK(StrLen(mTestArgs)==795 && !mTestRootReadonly);
+  CHECK(BootFullKernel()==EFI_ACCESS_DENIED && boot_calls==1 && read_calls==6);
+  CHECK(BootFullKernel()==EFI_NOT_READY && boot_calls==1);
+  initialize(); mTestRootMedia=TRUE; rejected();
+  initialize(); mTestRootMedia=TRUE; mTestArgs=SHENG_ROOT_READONLY_ARGS; rejected();
+  initialize(); mTestRootReadonly=TRUE; mTestArgs=SHENG_ROOT_MEDIA_ARGS; rejected();
+  initialize(); mTestRootMedia=TRUE; mTestArgs=SHENG_FULL_ROOT_BASELINE_ARGS; rejected();
+  initialize(); mTestRootReadonly=mTestRootMedia=TRUE; mTestArgs=SHENG_ROOT_MEDIA_ARGS; rejected();
+  initialize(); mTestRootReadonly=mTestRootMedia=TRUE; mTestArgs=SHENG_ROOT_READONLY_ARGS; rejected();
+  whitelist_rejections(SHENG_ROOT_MEDIA_ARGS,TRUE);
+  for(i=0;i<sizeof(bad_args)/sizeof(bad_args[0]);i++) {
+    initialize(); mTestRootMedia=TRUE; mTestArgs=bad_args[i]; rejected();
+  }
+  initialize(); mTestRootMedia=TRUE; mTestArgs=SHENG_ROOT_MEDIA_ARGS;
+  push(SCAN_UP,0); push(SCAN_UP,0); push(0,CHAR_CARRIAGE_RETURN); run_ui(3);
+  CHECK(mConfirming && !mConfirmBoot && boot_calls==0);
+  CHECK(strstr(print_log,"SHENG ROOT MEDIA PROBE") && strstr(print_log,"Confirm ROOT MEDIA diagnostic"));
+  CHECK(strstr(print_log,"RUN ROOT MEDIA ONCE") && strstr(print_log,"Waiting for media report (usually about 20 seconds)"));
+  CHECK(strstr(print_log,"Data seed IOMedia may count") && strstr(print_log,"does not prove a mounted root"));
+  CHECK(!strstr(print_log,"BOOT FULL XNU ONCE") && !strstr(print_log,"ROOT READONLY") && !strstr(print_log,"20.5"));
+  initialize(); mTestRootMedia=TRUE; mTestArgs=SHENG_ROOT_MEDIA_ARGS;
+  push(SCAN_UP,0); push(SCAN_UP,0); push(0,CHAR_CARRIAGE_RETURN); push(0,CHAR_CARRIAGE_RETURN); run_ui(4);
+  CHECK(!mConfirming && !mBootAttempted && boot_calls==0);
+  initialize(); mTestRootMedia=TRUE; mTestArgs=SHENG_ROOT_MEDIA_ARGS;
+  push(SCAN_UP,0); push(SCAN_UP,0); push(0,CHAR_CARRIAGE_RETURN); push(SCAN_ESC,0); run_ui(4);
+  CHECK(!mConfirming && !mBootAttempted && boot_calls==0);
+  initialize(); mTestRootMedia=TRUE; mTestArgs=SHENG_ROOT_MEDIA_ARGS;
+  push(SCAN_UP,0); push(SCAN_UP,0); push(0,CHAR_CARRIAGE_RETURN); push(SCAN_DOWN,0);
+  push(0,CHAR_CARRIAGE_RETURN); push(0,CHAR_CARRIAGE_RETURN); run_ui(6);
+  CHECK(boot_calls==1 && mBootAttempted && mLastBootStatus==EFI_ACCESS_DENIED && !mConfirming);
+  CHECK(strstr(print_log,"Calling DarwinBoot for ROOT MEDIA probe 12") && strstr(print_log,"expect a diagnostic panic"));
+  CHECK(BootFullKernel()==EFI_NOT_READY && boot_calls==1);
+  initialize(); mTestRootMedia=TRUE; mTestArgs=SHENG_ROOT_MEDIA_ARGS; no_input=1; run_ui(3); CHECK(boot_calls==0);
+  initialize(); mTestRootMedia=TRUE; mTestArgs=SHENG_ROOT_MEDIA_ARGS; zero_events=1; run_ui(3); CHECK(boot_calls==0);
   initialize();
-  puts("PASS: real kernel probe host simulation: verified-volume/argument gates, exact partial seed reads, cleanup, one callback, confirmation, persistent recovery display and root-readonly whitelist/UI");
+  puts("PASS: real kernel probe host simulation: verified-volume/argument gates, exact partial seed reads, cleanup, one callback, confirmation, persistent recovery display and root-readonly/root-media whitelists/UI");
   return 0;
 }

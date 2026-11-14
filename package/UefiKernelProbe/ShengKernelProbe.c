@@ -24,9 +24,14 @@
 #include "../UefiKernelDisk/ShengKernelDiskDiagnostic.h"
 #include "ShengFullTrialConfig.h"
 #include "ShengRootReadonlyArgs.h"
+#include "ShengRootMediaArgs.h"
 
 #ifndef SHENG_FULL_TRIAL_ROOT_READONLY
 #error Generate the explicit trial mode in ShengFullTrialConfig.h
+#endif
+
+#ifndef SHENG_FULL_TRIAL_ROOT_MEDIA
+#error Generate the explicit media trial mode in ShengFullTrialConfig.h
 #endif
 
 #ifndef SHENG_KERNEL_PROBE_BUILD_ID
@@ -117,7 +122,13 @@ CheckArguments (
 
   Token = SHENG_FULL_TRIAL_ARGS;
   ArgumentLength = StrLen (Token);
-  if (ArgumentLength > 1000) {
+  if ((ArgumentLength > 1000) || (SHENG_FULL_TRIAL_ROOT_READONLY && SHENG_FULL_TRIAL_ROOT_MEDIA)) {
+    return FALSE;
+  }
+  if (SHENG_FULL_TRIAL_ROOT_MEDIA &&
+      ((ArgumentLength != StrLen (SHENG_ROOT_MEDIA_ARGS)) ||
+       (StrnCmp (Token, SHENG_ROOT_MEDIA_ARGS, ArgumentLength) != 0)))
+  {
     return FALSE;
   }
   if (SHENG_FULL_TRIAL_ROOT_READONLY &&
@@ -377,21 +388,30 @@ Draw (
     gST->ConOut->SetAttribute (gST->ConOut, EFI_LIGHTGRAY | EFI_BACKGROUND_BLACK);
     gST->ConOut->ClearScreen (gST->ConOut);
   }
-  if (SHENG_FULL_TRIAL_ROOT_READONLY) {
+  if (SHENG_FULL_TRIAL_ROOT_MEDIA) {
+    Print (L"SHENG ROOT MEDIA PROBE\nBuild: %a\n", SHENG_KERNEL_PROBE_BUILD_ID);
+  } else if (SHENG_FULL_TRIAL_ROOT_READONLY) {
     Print (L"SHENG ROOT READONLY PROBE\nBuild: %a\n", SHENG_KERNEL_PROBE_BUILD_ID);
   } else {
     Print (L"SHENG KERNEL TRANSPORT PROBE\nBuild: %a\n", SHENG_KERNEL_PROBE_BUILD_ID);
   }
   Print (L"Page %u/%u  EFI app CurrentEL=%u (raw 0x%lx)\n",
          (UINT32)mPage + 1, PROBE_PAGE_COUNT, (UINT32)(mCurrentEl >> 2), mCurrentEl);
-  if (SHENG_FULL_TRIAL_ROOT_READONLY) {
+  if (SHENG_FULL_TRIAL_ROOT_MEDIA) {
+    Print (L"Purpose: probe 12 media report; enumeration does not prove a mounted root.\n\n");
+  } else if (SHENG_FULL_TRIAL_ROOT_READONLY) {
     Print (L"Purpose: UFS root metadata diagnosis; expected probe 10 panic.\n\n");
   } else {
     Print (L"This screen records UEFI transport; it does not prove XNU execution.\n\n");
   }
 
   if (mConfirming) {
-    if (SHENG_FULL_TRIAL_ROOT_READONLY) {
+    if (SHENG_FULL_TRIAL_ROOT_MEDIA) {
+      Print (L"Confirm ROOT MEDIA diagnostic\n\n");
+      Print (L"Existing kernel probe 12 reports media, then intentionally panics.\n");
+      Print (L"Waiting for media report (usually about 20 seconds).\n");
+      Print (L"Data seed IOMedia may count; this does not prove a mounted root.\n");
+    } else if (SHENG_FULL_TRIAL_ROOT_READONLY) {
       Print (L"Confirm ROOT READONLY diagnostic\n\n");
       Print (L"Existing kernel probe 10 reads GPT/userdata metadata, then panics.\n");
       Print (L"It stops before normal root publication or OS startup.\n");
@@ -400,7 +420,10 @@ Draw (
       Print (L"The full kernel and sidecars come from the verified read-only volume.\n");
     }
     Print (L"Data persistence=0; UFS log/export=0.\n\n");
-    if (SHENG_FULL_TRIAL_ROOT_READONLY) {
+    if (SHENG_FULL_TRIAL_ROOT_MEDIA) {
+      Print (L"%s Cancel\n%s RUN ROOT MEDIA ONCE\n\n",
+             mConfirmBoot ? L" " : L">", mConfirmBoot ? L">" : L" ");
+    } else if (SHENG_FULL_TRIAL_ROOT_READONLY) {
       Print (L"%s Cancel\n%s RUN ROOT READONLY ONCE\n\n",
              mConfirmBoot ? L" " : L">", mConfirmBoot ? L">" : L" ");
     } else {
@@ -446,7 +469,12 @@ Draw (
       Print (L"\nExpected Data seed: %lu bytes\n", (UINT64)SHENG_FULL_TRIAL_RAMDISK_BYTES);
       break;
     case 3:
-      if (SHENG_FULL_TRIAL_ROOT_READONLY) {
+      if (SHENG_FULL_TRIAL_ROOT_MEDIA) {
+        Print (L"> Run ROOT MEDIA diagnostic once\n\n");
+        Print (L"Waiting for media report (usually about 20 seconds).\n");
+        Print (L"Data seed IOMedia may count; enumeration does not prove a mounted root.\n");
+        Print (L"Probe 12 intentionally panics with its media report.\n\n");
+      } else if (SHENG_FULL_TRIAL_ROOT_READONLY) {
         Print (L"> Run ROOT READONLY diagnostic once\n\n");
         Print (L"Expected result: userdata boundaries/magic and manifest status.\n");
         Print (L"Probe 10 intentionally panics before normal root publication.\n\n");
@@ -536,7 +564,10 @@ BootFullKernel (
   Request.BootArgs = SHENG_FULL_TRIAL_ARGS;
   Request.Ramdisk = Seed;
   Request.RamdiskSize = (UINTN)Bytes;
-  if (SHENG_FULL_TRIAL_ROOT_READONLY) {
+  if (SHENG_FULL_TRIAL_ROOT_MEDIA) {
+    Print (L"Calling DarwinBoot for ROOT MEDIA probe 12; expect a diagnostic panic.\n");
+    Print (L"Waiting for media report (usually about 20 seconds); Data seed IOMedia may count.\n");
+  } else if (SHENG_FULL_TRIAL_ROOT_READONLY) {
     Print (L"Calling DarwinBoot for ROOT READONLY probe 10; expect a diagnostic panic.\n");
   } else {
     Print (L"Calling DarwinBoot with the verified volume; no kernel checkpoint claimed.\n");

@@ -37,18 +37,35 @@ def full_root_args():
     return arguments
 
 
-def trial_mode(root_readonly_probe=False, full_root_trial=False):
-    if root_readonly_probe and full_root_trial:
-        raise ValueError('Root-readonly probe and full-root trial are mutually exclusive')
-    return 'full-root-trial' if full_root_trial else 'root-readonly-probe' if root_readonly_probe else 'full-kernel'
+def root_media_args():
+    """The complete Stage 3 handoff with only the media-report probe appended."""
+    arguments = full_root_args() + ' native-ufs-probe=12'
+    header = (ROOT / 'package/UefiKernelProbe/ShengRootMediaArgs.h').read_text(encoding='utf-8')
+    match = re.search(r'^#define SHENG_ROOT_MEDIA_ARGS L("[^\n]+")$', header, re.MULTILINE)
+    if (match is None or json.loads(match[1]) != arguments or len(arguments) != 795 or
+            hashlib.sha256(arguments.encode('ascii')).hexdigest() !=
+            '0e29632941bb5a79b4af422526f0689a874584b38d4c5fed506af74c9a31abfa'):
+        raise ValueError('Root-media probe requires the exact Stage 3 baseline plus probe 12')
+    return arguments
 
 
-def handoff_inputs(report, root_readonly_probe=False, full_root_trial=False):
-    mode = trial_mode(root_readonly_probe, full_root_trial)
+def trial_mode(root_readonly_probe=False, full_root_trial=False, root_media_probe=False):
+    if sum(map(bool, (root_readonly_probe, full_root_trial, root_media_probe))) > 1:
+        raise ValueError('Root-readonly probe, full-root trial and root-media probe are mutually exclusive')
+    return ('root-media-probe' if root_media_probe else 'full-root-trial' if full_root_trial else
+            'root-readonly-probe' if root_readonly_probe else 'full-kernel')
+
+
+def handoff_inputs(report, root_readonly_probe=False, full_root_trial=False, root_media_probe=False):
+    mode = trial_mode(root_readonly_probe, full_root_trial, root_media_probe)
     result = dict(report)
     result['kernel_args_origin'] = 'Source FAT configuration after the audited repack; not necessarily the effective loader handoff.'
     arguments = report['kernel_args']
-    if root_readonly_probe:
+    if root_media_probe:
+        arguments += ' native-ufs-probe=12'
+        if arguments != root_media_args():
+            raise ValueError('Root-media source arguments differ from the exact Stage 3 baseline plus probe 12')
+    elif root_readonly_probe:
         arguments += ' native-ufs-probe=10'
         if arguments != root_readonly_args():
             raise ValueError('Root-readonly source arguments differ from the exact Stage 3 baseline plus probe 10')
@@ -62,10 +79,11 @@ def handoff_inputs(report, root_readonly_probe=False, full_root_trial=False):
 def render_app_config(inputs):
     return ('#define SHENG_FULL_TRIAL_ARGS L' + json.dumps(inputs['effective_handoff_args']) + '\n'
             '#define SHENG_FULL_TRIAL_ROOT_READONLY ' + str(int(inputs['trial_mode'] == 'root-readonly-probe')) + '\n'
+            '#define SHENG_FULL_TRIAL_ROOT_MEDIA ' + str(int(inputs['trial_mode'] == 'root-media-probe')) + '\n'
             '#define SHENG_FULL_TRIAL_RAMDISK_BYTES ' + str(inputs['seed_bytes']) + 'ULL\n')
 
 
-def prepare(source, output, root_readonly_probe=False, full_root_trial=False):
+def prepare(source, output, root_readonly_probe=False, full_root_trial=False, root_media_probe=False):
     spec = importlib.util.spec_from_file_location('full_repack', ROOT / 'scripts/repack-sheng-full-trial.py')
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
@@ -87,7 +105,7 @@ def prepare(source, output, root_readonly_probe=False, full_root_trial=False):
     report['boot_sector_sha256'] = module.sha(payload[:512])
     report['boot_prefix_hex'] = payload[:16].hex()
     # The mode changes only the generated app handoff, never the FAT bytes.
-    report = handoff_inputs(report, root_readonly_probe, full_root_trial)
+    report = handoff_inputs(report, root_readonly_probe, full_root_trial, root_media_probe)
     (output / 'full-trial-inputs.json').write_text(json.dumps(report, indent=2) + '\n')
     return report
 

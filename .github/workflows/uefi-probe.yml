@@ -48,8 +48,12 @@ on:
         description: "Explicit installed-root trial; exact baseline args, no probe, log=0/data-persist=0 (requires full + handoff code clean)"
         type: boolean
         default: false
+      root_media_probe:
+        description: "Explicit probe 12 media report; Data seed media may count (requires full + handoff code clean)"
+        type: boolean
+        default: false
       handoff_code_clean:
-        description: "Handoff code PoC clean (full read-only probe or explicit full-root trial only)"
+        description: "Handoff code PoC clean (explicit full-stage root trial modes only)"
         type: boolean
         default: false
 
@@ -101,16 +105,28 @@ jobs:
           done
       - name: offline probe contract checks
         run: python3 probe-sources/device/scripts/build-uefi-probe.py --self-test
-      - name: validate explicit full-root trial inputs
-        if: inputs.full_root_trial
+      - name: validate explicit root trial inputs
+        if: github.event_name == 'workflow_dispatch'
         env:
           PROBE_STAGE: ${{ inputs.stage }}
           ROOT_READONLY_PROBE: ${{ inputs.root_readonly_probe }}
+          FULL_ROOT_TRIAL: ${{ inputs.full_root_trial }}
+          ROOT_MEDIA_PROBE: ${{ inputs.root_media_probe }}
           HANDOFF_CODE_CLEAN: ${{ inputs.handoff_code_clean }}
         run: |
-          test "$PROBE_STAGE" = full
-          test "$ROOT_READONLY_PROBE" != true
-          test "$HANDOFF_CODE_CLEAN" = true
+          modes=0
+          [ "$ROOT_READONLY_PROBE" != true ] || modes=$((modes + 1))
+          [ "$FULL_ROOT_TRIAL" != true ] || modes=$((modes + 1))
+          [ "$ROOT_MEDIA_PROBE" != true ] || modes=$((modes + 1))
+          test "$modes" -le 1
+          if [ "$modes" -gt 0 ]; then test "$PROBE_STAGE" = full; fi
+          if [ "$FULL_ROOT_TRIAL" = true ] || [ "$ROOT_MEDIA_PROBE" = true ]; then
+            test "$HANDOFF_CODE_CLEAN" = true
+          fi
+          if [ "$HANDOFF_CODE_CLEAN" = true ]; then
+            test "$PROBE_STAGE" = full
+            test "$modes" -eq 1
+          fi
       - uses: actions/checkout@v4
         if: inputs.stage == 'full' || github.event_name == 'push'
         with:
@@ -136,12 +152,14 @@ jobs:
           PROBE_STAGE: ${{ inputs.stage || 'full' }}
           ROOT_READONLY_PROBE: ${{ github.event_name == 'push' || inputs.root_readonly_probe }}
           FULL_ROOT_TRIAL: ${{ github.event_name == 'workflow_dispatch' && inputs.full_root_trial }}
+          ROOT_MEDIA_PROBE: ${{ github.event_name == 'workflow_dispatch' && inputs.root_media_probe }}
           HANDOFF_CODE_CLEAN: ${{ github.event_name == 'push' || inputs.handoff_code_clean }}
         run: |
           args=(--unixnu probe-sources/UniXNU --uefi probe-sources/uefi-sheng --stage "$PROBE_STAGE" --output "probe-output-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}")
           [ "$PROBE_STAGE" != full ] || args+=(--full-package full-package/ipados-27.0.1-24A446/sheng_ipados27)
           [ "$ROOT_READONLY_PROBE" != true ] || args+=(--root-readonly-probe)
           [ "$FULL_ROOT_TRIAL" != true ] || args+=(--full-root-trial)
+          [ "$ROOT_MEDIA_PROBE" != true ] || args+=(--root-media-probe)
           [ "$HANDOFF_CODE_CLEAN" != true ] || args+=(--handoff-code-clean)
           [ "$PREPARE_ONLY" != true ] || args+=(--prepare-only)
           python3 probe-sources/device/scripts/build-uefi-probe.py "${args[@]}" -j 4

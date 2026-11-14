@@ -543,5 +543,52 @@ Source hashes, overlay patch and provenance also pass independent inspection.
 At 2026-11-14 11:05 UTC, serial 33b62981 was confirmed as sheng in bootloader
 Fastboot and accepted one temporary boot with sending/booting OKAY. The local
 `out/handoff-code-clean-43586887818-1/` directory retains the independent
-report, preflight and device command record. Screen and root-check evidence
-are pending. This is not a root-mount or completed stage-4 result.
+report, preflight and device command record. The device result is below.
+
+## Successful pre-install root diagnostic
+
+The owner photograph `IMG_20261114_190723.jpg`, SHA-256
+`4225eb3dfd341465873a21f9c77b9d5210d1f17a131bba387ccb72e49be4d6f8`,
+shows green/blue bands and the expected `NATIVE_UFS root check` screen:
+
+```text
+userdata first=2f3840 last=3d0abfa
+block0 magic 220de1eb ce77f415 ext4magic=7dfb ext4blocks=418250717
+manifest status=1 windows=0 @NativeUfs.cpp:2465
+```
+
+The pinned ShengUfs probe 10 deliberately panics at this point. The panic
+renderer then parks with WFE. No initial-video retry is required. This run
+crossed the earlier DarwinEnter exception and executed XNU, UFS bring-up,
+GPT header/entry CRC validation and the first 4 KiB userdata read. It supports
+retaining the isolated self-code clean for subsequent trials, without proving
+cache visibility was the sole cause of the previous exception.
+
+The 4 KiB LBA range gives 60912571 blocks, or 249497890816 bytes. Both endpoints
+and capacity equal the prepared root image geometry. Status 1 means the first
+eight userdata bytes are not SHNGROOT; no windows were parsed. These are the
+current Android bytes, not a rejection of the uninstalled candidate. The raw
+ext4 fields do not identify an ext4 filesystem: the sampled magic is not EF53.
+
+The candidate's complete 14732319540-byte sparse file was freshly hashed before
+proposing installation; SHA-256 remains
+`1dad4810d16d9fc1b4306879c892b7417bf19fddcd97203dae0c0b5305b27bf6`.
+Existing manifest, signed policy, table, kernel key and ADT UUID checks remain
+applicable. The successful single run is frozen in
+`out/baselines/handoff-clean-root-probe-passed/baseline.json`.
+Stage 4 remains incomplete: root mounting, persistent Data and launchd are not
+observed. [The installation proposal](stage4-root-install-plan.md) requires
+explicit authorization before overwriting Android userdata.
+
+The owner subsequently authorized the userdata write and requested chunks to
+avoid a long uninterrupted write. The existing Fastboot 31.0.2 `-S` option
+limits encoded transfer size; an arbitrary-length FILL still costs only 16
+encoded bytes in its exact AOSP source. The prepared install therefore uses
+465 independently checked logical ranges of at most 512 MiB, each passed
+through `-S 128M`. Sparse skip prefixes/suffixes preserve absolute offsets;
+RAW/FILL equivalence retains all explicit zero fill. The SHNGROOT-containing
+range is last. Eight host tests and real first/last-range checks pass; each
+range is checked again before its device command. Errors stop the attempt,
+without automatic retry, further fragments or boot. This bounds logical write
+requests, not proprietary bootloader internals. The existing whole-image hash
+and live capacity/4 KiB geometry checks bind the original input and target.

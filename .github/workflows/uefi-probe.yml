@@ -2,6 +2,14 @@ name: UEFI probe
 
 # Independent firmware bring-up: no kernel, IPSW, payload or installation seed.
 on:
+  push:
+    branches: ["codex/uefi-probe"]
+    paths:
+      - ".github/workflows/uefi-probe.yml"
+      - "scripts/build-uefi-probe.py"
+      - "scripts/check-uefi-probe.py"
+      - "package/UefiProbe/**"
+      - "board.toml"
   workflow_dispatch:
     inputs:
       runner:
@@ -23,7 +31,7 @@ concurrency:
 
 jobs:
   probe:
-    runs-on: ${{ inputs.runner == 'sheng-build' && fromJSON('["self-hosted","macOS","ARM64","sheng-build"]') || inputs.runner }}
+    runs-on: ${{ inputs.runner == 'sheng-build' && fromJSON('["self-hosted","macOS","ARM64","sheng-build"]') || inputs.runner || 'macos-26' }}
     timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4

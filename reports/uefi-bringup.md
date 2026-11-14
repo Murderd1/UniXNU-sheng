@@ -40,10 +40,17 @@ checkpoints. The ABL splash-region fixup is preserved when packing the image.
 
 ## Baseline and input versions
 
-The owner restored Android independently. A read-only ADB check on 2026-11-14
+The owner restored Android independently. An initial read-only ADB check on 2026-11-14
 reported product `sheng`, build `OS3.0.303.0.WNXCNXM`, `sys.boot_completed=1`,
-`ro.boot.flash.locked=0`, and `ro.boot.vbmeta.device_state=unlocked`. No new
-device boot or partition write has been performed by this implementation.
+`ro.boot.flash.locked=0`, and `ro.boot.vbmeta.device_state=unlocked`.
+Three subsequent ordinary Android reboots each reached `sys.boot_completed=1`
+with a fresh kernel boot ID and the boot animation stopped, in about 30 seconds.
+Saved screenshots show the stock lock screen. Fastboot then reported product
+`sheng`, active slot `a`, `unlocked=yes`, and `is-userspace=no`.
+Temporary boot of the matching CN stock image (header v4, SHA-256
+`4156a2369f78bc5df61b6a521b07a508dedf20d5e63c207d30986ae37df3eaea`)
+succeeded and Android completed a fresh boot. These tests used reboot and
+temporary boot commands; no partition-write command was issued.
 The supplied recovery directory is `sheng_images_OS3.0.303.0.WNXCNXM_16.0`;
 its `misc.txt` identifies sheng and the CN build, and its anti version is 1.
 That local recovery package is not a build input or a claimed successful boot.
@@ -77,9 +84,27 @@ comparison. Independent Windows checks passed all seven checksum entries,
 zero ramdisk, the ARM64 shim header, exact embedded FD equality and the
 appended DTB's `cont_splash_region` label and reservation.
 
-This is build evidence only. The image has not yet demonstrated bootloader
-acceptance, a visible UEFI screen or a received physical key. Later host-test
-portability fixes do not alter this frozen image or its recorded revision.
+The original v0 image returned sending/booting `OKAY`, but the owner observed a
+black screen and Fastboot still responded immediately to `getvar product`.
+This image failed the visible-interface gate. Android recovered normally
+through `fastboot reboot`.
+
+A single-variable comparison replaced only the 4096-byte Android header page
+with a v4 header, preserving every following byte: gzip data, BootShim, FD,
+appended DTB and padding. The candidate image is 1150976 bytes, SHA-256
+`3eb9c7c59fccdff2505050ef11f487399d9c63cc5e2813210f4013941e6e6c27`.
+At 2026-11-14 05:05 UTC it was temporarily booted; the owner then reported a
+visible picture and responding volume keys. The owner subsequently confirmed the SHENG UEFI PROBE interface, a heartbeat
+above 300 and continuously responsive keys without a reset. Exact build-ID
+readback, hardware Fastboot recovery and three cold boots remain pending. The result establishes
+the container-version difference for this image and restored bootloader; it
+does not identify which internal ABL check caused the v0 failure.
+
+`build-uefi-probe.py` now overrides `header_version=4` and `pagesize=4096` in
+its isolated in-memory board copy. It records the override and effective image
+settings in the manifest and checks the resulting header version. Repository
+`board.toml`, firmware inputs, compression, BootShim and drivers are unchanged.
+The independent build output still starts with no claimed hardware observations.
 
 ## Device evidence to collect
 

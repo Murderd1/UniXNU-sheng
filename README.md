@@ -54,6 +54,9 @@ Use the independent **UEFI probe** Actions workflow while qualifying firmware.
 It builds DEBUG firmware and a boot image without a kernel, IPSW, payload,
 installation seed or userdata image. It keeps the stock archive pinned in
 `board.toml`; the current input is `OS3.0.305.0.WNXMIXM`.
+The isolated probe uses an Android v4 boot header. A device comparison with
+identical kernel-field bytes showed a black screen with the inherited v0
+header and a visible probe with responsive volume keys after changing to v4.
 
 On macOS, with clean checkouts of UniXNU `d830d23b0d19c9322d906c21afeca1d6c54aeffe`
 and uefi-sheng `66421cb7bb5694843aec8de1ca3d1de4c20cca38`:

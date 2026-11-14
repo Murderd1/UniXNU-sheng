@@ -25,6 +25,7 @@ TOOLS_COMMIT = 'd830d23b0d19c9322d906c21afeca1d6c54aeffe'
 UEFI_COMMIT = '66421cb7bb5694843aec8de1ca3d1de4c20cca38'
 EDK2_COMMIT = 'cfb93724a06ff86ff5ba971413368a7809ee42a5'
 APP_GUID = '9B665204-A133-47A2-9396-9E2B370A4E25'
+PROBE_BOOT_IMAGE = {'header_version': 4, 'pagesize': 4096}
 NORMAL_APP = 'UniXNUPkg/Application/UniXNU/UniXNU.inf'
 PROBE_APP = 'UniXNUPkg/Application/ShengUefiProbe/ShengUefiProbe.inf'
 DARWIN_INF = 'DarwinBootPkg/Driver/DarwinBoot.inf'
@@ -284,6 +285,11 @@ def build(args):
         clone_local(args.unixnu, tools, TOOLS_COMMIT, logs / 'sources.log')
         clone_local(args.uefi, uefi, UEFI_COMMIT, logs / 'sources.log')
         board = copy.deepcopy(tomllib.loads((ROOT / 'board.toml').read_text(encoding='utf-8')))
+        # A device comparison with identical kernel bytes reached the visible
+        # probe and working volume keys only with a v4 Android container.
+        # Override the isolated board copy; retain the repository's OS recipe.
+        board.setdefault('bootimg', {}).setdefault('image', {}).update(PROBE_BOOT_IMAGE)
+        manifest['probe_boot_image_overrides'] = dict(PROBE_BOOT_IMAGE)
         # Import genuine board binaries below rather than downloading the
         # unrelated Device-Binaries submodule or a second Mu_Basecore checkout.
         command(['git', '-C', uefi, 'submodule', 'update', '--init', '--recursive', '--depth', '1',
@@ -343,8 +349,16 @@ def build(args):
         fv_report = verify_firmware(uefi, tree, fd, build_id, logs, env)
         write_json(output / 'fv-check.json', fv_report)
         shutil.copy2(fd, output / 'SILICIUM_UEFI.fd')
+        image_settings, fd_base, fd_size, requires_header, _ = bootimg.settings(ctx, uefi)
+        manifest['effective_boot_image_settings'] = dict(
+            image_settings, kernel_compression=str(image_settings.get('kernel_compression', 'gzip')).lower())
+        manifest['boot_layout'] = {
+            'fd_base': hex(fd_base), 'fd_bytes': fd_size, 'requires_kernel_header': requires_header,
+            'append_dtb': True, 'dtb_node_fixups': board['bootimg'].get('dtb_node', [])}
         bootimg.build(ctx, uefi, fd, tree / 'build/sheng/sheng.dtb', ramdisk=None, output=output / 'boot.img')
         report = json.loads((output / 'boot.json').read_text())
+        if report['header_version'] != PROBE_BOOT_IMAGE['header_version']:
+            raise ProbeError('UEFI probe must use the v4 Android container')
         if report['ramdisk_bytes'] != 0 or report['hardware_tested']:
             raise ProbeError('UEFI probe image must have no ramdisk and no hardware claim')
         for path in fd.parent.glob('*.Fv.map'):

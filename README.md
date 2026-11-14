@@ -51,12 +51,17 @@ changing storage resources or policy.
 ## UEFI bring-up
 
 Use the independent **UEFI probe** Actions workflow while qualifying firmware.
-It builds DEBUG firmware and a boot image without a kernel, IPSW, payload,
-installation seed or userdata image. It keeps the stock archive pinned in
+The `probe` and `menu` stages build DEBUG firmware without an OS kernel,
+IPSW, installation seed or userdata image. The `full` stage reuses the audited
+complete package rather than rebuilding XNU. It keeps the stock archive pinned in
 `board.toml`; the current input is `OS3.0.305.0.WNXMIXM`.
-The isolated probe uses an Android v4 boot header. A device comparison with
+The isolated probe/menu use an Android v4 boot header. A device comparison with
 identical kernel-field bytes showed a black screen with the inherited v0
 header and a visible probe with responsive volume keys after changing to v4.
+Full-payload transport uses v3: a comparison with identical body bytes
+delivered the full FAT and reached a real XNU root-manifest panic with v3,
+while v4 delivered the restored Android ramdisk. The accepted stage 3 image
+and photos are frozen locally in `out/baselines/stage-3-kernel-passed/`.
 
 On macOS, with clean checkouts of UniXNU `d830d23b0d19c9322d906c21afeca1d6c54aeffe`
 and uefi-sheng `66421cb7bb5694843aec8de1ca3d1de4c20cca38`:
@@ -71,6 +76,14 @@ embeds the probe instead of the normal boot manager, and removes DarwinBoot.
 It produces `boot.img`, `SILICIUM_UEFI.fd`, input hashes, a manifest and logs.
 `--prepare-only` prepares sources without importing stock files or compiling.
 Host checks and successful builds alone do not establish hardware acceptance.
+
+For stage 4, choose `full` and enable `root_readonly_probe` in Actions, or add
+`--root-readonly-probe` locally with the audited `--full-package` input. This
+reuses the unchanged full FAT/kernel but passes the explicit probe-10 argument
+set to DarwinBoot. It displays GPT/userdata bounds, first-block magic and root
+manifest status, then stops at the diagnostic panic. Persistent Data and UFS
+log writes stay disabled. The uploaded artifact carries the FAT once inside
+`boot.img`; extract its Android ramdisk to verify `full-volume.img`'s recorded hash.
 
 First restore a matching official Android package, retain the unlocked
 bootloader, and verify Android boot and Fastboot detection. One complete

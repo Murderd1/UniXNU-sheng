@@ -7,6 +7,7 @@
 #include <Uefi.h>
 
 static CONST CHAR16 *mTestArgs;
+static BOOLEAN mTestRootReadonly;
 // Native AARCH64 hosts run at EL0 and cannot read CurrentEL. The separate
 // freestanding compile below keeps the firmware instruction enabled.
 #define SHENG_KERNEL_PROBE_HOST_TEST 1
@@ -42,6 +43,8 @@ static EFI_INPUT_KEY keys[32];
 static unsigned key_count, key_index, event_count, stop_events;
 static unsigned scenario;
 static int draining;
+static char print_log[65536];
+static UINTN print_length;
 
 #define CHECK(x) do { if (!(x)) { fprintf(stderr,"check failed: %s:%d: %s\n",__FILE__,__LINE__,#x); exit(1); } } while (0)
 
@@ -64,7 +67,15 @@ VOID *EFIAPI AllocatePool(UINTN n) {
   p=malloc((size_t)n); CHECK(p); allocations++; return p;
 }
 VOID EFIAPI FreePool(VOID *p) { CHECK(p && frees<allocations); frees++; free(p); }
-UINTN EFIAPI Print(CONST CHAR16 *format, ...) { (void)format; return 0; }
+UINTN EFIAPI Print(CONST CHAR16 *format, ...) {
+  UINTN i=0;
+  while(format[i]) {
+    CHECK(print_length+1<sizeof(print_log));
+    print_log[print_length++]=(char)format[i++];
+  }
+  print_log[print_length]=0;
+  return i;
+}
 
 static EFI_STATUS EFIAPI locate(EFI_GUID *guid, VOID *registration, VOID **out) {
   (void)registration; *out=NULL;
@@ -149,7 +160,8 @@ static void initialize(void) {
   allocation_calls=fail_allocation=read_calls=read_mode=fail_file=0;
   null_diagnostic=null_loader=no_input=fail_wait=zero_events=0;
   key_count=key_index=event_count=stop_events=0; draining=1;
-  position=0; partial_bytes=3; seed_size=sizeof(seed); mTestArgs=safe_args;
+  position=0; partial_bytes=3; seed_size=sizeof(seed); mTestArgs=safe_args; mTestRootReadonly=FALSE;
+  print_length=0; print_log[0]=0;
   open_volume_status=open_status=get_info_status=read_status=EFI_SUCCESS;
   diagnostic_status=loader_status=block_status=fs_status=EFI_SUCCESS;
   mVolumeStatus=mLoaderStatus=mLastBootStatus=EFI_NOT_READY; mDiagnosticStatus=EFI_NOT_READY;
@@ -186,7 +198,7 @@ static void ready(void) {
       (unsigned long long)StrLen(mTestArgs),(unsigned long long)StrLen(L"data-persist"),
       (long long)StrnCmp(mTestArgs,L"data-persist",12));
     fprintf(stderr,"argument code units:");
-    for(unit=0;unit<sizeof(safe_args)/sizeof(safe_args[0]);unit++) fprintf(stderr," %04x",(unsigned)mTestArgs[unit]);
+    for(unit=0;unit<=StrLen(mTestArgs) && unit<1001;unit++) fprintf(stderr," %04x",(unsigned)mTestArgs[unit]);
     fprintf(stderr,"\n");
     token=mTestArgs;
     for(i=0;i<16 && *token;i++) {
@@ -289,7 +301,37 @@ int main(void) {
   initialize(); no_input=1; run_ui(3); CHECK(boot_calls==0);
   initialize(); fail_wait=1; run_ui(3); CHECK(boot_calls==0);
   initialize(); zero_events=1; run_ui(3); CHECK(boot_calls==0);
+  initialize(); mTestRootReadonly=TRUE; mTestArgs=SHENG_ROOT_READONLY_ARGS; ready();
+  CHECK(BootFullKernel()==EFI_ACCESS_DENIED && boot_calls==1 && read_calls==6);
+  initialize(); mTestRootReadonly=TRUE; rejected();
+  // Every omitted or mutated whitelist token rejects the diagnostic handoff.
+  {
+    CHAR16 altered[512]; UINTN first,last,tail,length=StrLen(SHENG_ROOT_READONLY_ARGS);
+    first=0;
+    while(first<length) {
+      last=first; while(last<length && SHENG_ROOT_READONLY_ARGS[last]!=L' ') last++;
+      CopyMem(altered,SHENG_ROOT_READONLY_ARGS,(length+1)*sizeof(CHAR16));
+      altered[first]=L'x';
+      initialize(); mTestRootReadonly=TRUE; mTestArgs=altered; rejected();
+      tail=last<length ? last+1 : last;
+      CopyMem(altered,SHENG_ROOT_READONLY_ARGS,first*sizeof(CHAR16));
+      CopyMem(altered+first,&SHENG_ROOT_READONLY_ARGS[tail],(length-tail+1)*sizeof(CHAR16));
+      initialize(); mTestRootReadonly=TRUE; mTestArgs=altered; rejected();
+      first=tail;
+    }
+    CopyMem(altered,SHENG_ROOT_READONLY_ARGS,(length+1)*sizeof(CHAR16));
+    CopyMem(altered+length,L" native-ufs-probe=10",20*sizeof(CHAR16));
+    initialize(); mTestRootReadonly=TRUE; mTestArgs=altered; rejected();
+  }
+  initialize(); mTestRootReadonly=TRUE; mTestArgs=SHENG_ROOT_READONLY_ARGS;
+  push(SCAN_UP,0); push(SCAN_UP,0); push(0,CHAR_CARRIAGE_RETURN); run_ui(3);
+  CHECK(mConfirming && !mConfirmBoot && boot_calls==0);
+  CHECK(strstr(print_log,"SHENG ROOT READONLY PROBE") && strstr(print_log,"Confirm ROOT READONLY diagnostic"));
+  CHECK(strstr(print_log,"RUN ROOT READONLY ONCE") && !strstr(print_log,"BOOT FULL XNU ONCE"));
+  initialize(); mTestRootReadonly=TRUE; mTestArgs=SHENG_ROOT_READONLY_ARGS;
+  push(SCAN_UP,0); push(SCAN_UP,0); push(0,CHAR_CARRIAGE_RETURN); push(SCAN_DOWN,0); push(0,CHAR_CARRIAGE_RETURN); run_ui(5);
+  CHECK(boot_calls==1 && mBootAttempted && strstr(print_log,"expect a diagnostic panic"));
   initialize();
-  puts("PASS: real kernel probe host simulation: verified-volume/argument gates, exact partial seed reads, cleanup, one callback, confirmation and persistent recovery display");
+  puts("PASS: real kernel probe host simulation: verified-volume/argument gates, exact partial seed reads, cleanup, one callback, confirmation, persistent recovery display and root-readonly whitelist/UI");
   return 0;
 }

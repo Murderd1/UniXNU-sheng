@@ -13,7 +13,9 @@ the repository's configuration placeholder.
 
 The host simulation checks verified-volume and loader gates, guarded arguments,
 exact seed size and contents, partial reads, failure cleanup, a single callback,
-manual confirmation, and a persistent recovery display. Native ARM64 hosts skip
+manual confirmation, a persistent recovery display, and the exact root-readonly
+whitelist with its dedicated confirmation text. Both full-kernel and root-readonly
+configurations receive a freestanding compile. Native ARM64 hosts skip
 the privileged `CurrentEL` read. The separate AARCH64 freestanding compile keeps
 that instruction and checks the actual firmware build path against EDK II.
 

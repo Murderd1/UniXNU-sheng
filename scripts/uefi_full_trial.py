@@ -2,6 +2,7 @@
 import importlib.util
 import json
 from pathlib import Path
+import re
 import shutil
 import struct
 import tomllib
@@ -14,7 +15,29 @@ DISK_INF = 'UefiKernelDisk/ShengKernelDiskDxe.inf'
 SHARED_DISK_INF = 'UniXNUPkg/Driver/UniXNURamDiskDxe/UniXNURamDiskDxe.inf'
 
 
-def prepare(source, output):
+def root_readonly_args():
+    header = (ROOT / 'package/UefiKernelProbe/ShengRootReadonlyArgs.h').read_text(encoding='utf-8')
+    match = re.search(r'^#define SHENG_ROOT_READONLY_ARGS L("[^\n]+")$', header, re.MULTILINE)
+    if match is None:
+        raise ValueError('Missing canonical root-readonly argument whitelist')
+    return json.loads(match[1])
+
+
+def handoff_inputs(report, root_readonly_probe=False):
+    result = dict(report)
+    result['kernel_args_origin'] = 'Source FAT configuration after the audited repack; not necessarily the effective loader handoff.'
+    result['effective_handoff_args'] = root_readonly_args() if root_readonly_probe else report['kernel_args']
+    result['trial_mode'] = 'root-readonly-probe' if root_readonly_probe else 'full-kernel'
+    return result
+
+
+def render_app_config(inputs):
+    return ('#define SHENG_FULL_TRIAL_ARGS L' + json.dumps(inputs['effective_handoff_args']) + '\n'
+            '#define SHENG_FULL_TRIAL_ROOT_READONLY ' + str(int(inputs['trial_mode'] == 'root-readonly-probe')) + '\n'
+            '#define SHENG_FULL_TRIAL_RAMDISK_BYTES ' + str(inputs['seed_bytes']) + 'ULL\n')
+
+
+def prepare(source, output, root_readonly_probe=False):
     spec = importlib.util.spec_from_file_location('full_repack', ROOT / 'scripts/repack-sheng-full-trial.py')
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
@@ -35,6 +58,8 @@ def prepare(source, output):
     report['volume_sha256'] = module.sha(payload)
     report['boot_sector_sha256'] = module.sha(payload[:512])
     report['boot_prefix_hex'] = payload[:16].hex()
+    # The mode changes only the generated app handoff, never the FAT bytes.
+    report = handoff_inputs(report, root_readonly_probe)
     (output / 'full-trial-inputs.json').write_text(json.dumps(report, indent=2) + '\n')
     return report
 
@@ -53,9 +78,7 @@ def integrate(builder, uefi, tree, build_id, inputs):
     builder.replace_once(app / 'ShengKernelProbe.c',
                          '#define SHENG_KERNEL_PROBE_BUILD_ID "unversioned"',
                          '#define SHENG_KERNEL_PROBE_BUILD_ID ' + json.dumps(build_id))
-    (app / 'ShengFullTrialConfig.h').write_text(
-        '#define SHENG_FULL_TRIAL_ARGS L' + json.dumps(inputs['kernel_args']) + '\n'
-        '#define SHENG_FULL_TRIAL_RAMDISK_BYTES ' + str(inputs['seed_bytes']) + 'ULL\n')
+    (app / 'ShengFullTrialConfig.h').write_text(render_app_config(inputs))
     expected = tree / 'package/UefiKernelDisk/KernelDiskExpected.h'
     expected.write_text(
         '#define SHENG_KERNEL_DISK_EXPECTED_BYTES ' + str(inputs['volume_bytes']) + 'ULL\n'

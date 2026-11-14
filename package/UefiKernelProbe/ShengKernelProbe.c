@@ -23,6 +23,11 @@
 
 #include "../UefiKernelDisk/ShengKernelDiskDiagnostic.h"
 #include "ShengFullTrialConfig.h"
+#include "ShengRootReadonlyArgs.h"
+
+#ifndef SHENG_FULL_TRIAL_ROOT_READONLY
+#error Generate the explicit trial mode in ShengFullTrialConfig.h
+#endif
 
 #ifndef SHENG_KERNEL_PROBE_BUILD_ID
 #define SHENG_KERNEL_PROBE_BUILD_ID "unversioned"
@@ -108,9 +113,17 @@ CheckArguments (
   UINTN         LogCount;
   UINTN         SourceCount;
   UINTN         RootCount;
+  UINTN         ArgumentLength;
 
   Token = SHENG_FULL_TRIAL_ARGS;
-  if (StrLen (Token) > 1000) {
+  ArgumentLength = StrLen (Token);
+  if (ArgumentLength > 1000) {
+    return FALSE;
+  }
+  if (SHENG_FULL_TRIAL_ROOT_READONLY &&
+      ((ArgumentLength != StrLen (SHENG_ROOT_READONLY_ARGS)) ||
+       (StrnCmp (Token, SHENG_ROOT_READONLY_ARGS, ArgumentLength) != 0)))
+  {
     return FALSE;
   }
   DataCount = LogCount = SourceCount = RootCount = 0;
@@ -364,17 +377,36 @@ Draw (
     gST->ConOut->SetAttribute (gST->ConOut, EFI_LIGHTGRAY | EFI_BACKGROUND_BLACK);
     gST->ConOut->ClearScreen (gST->ConOut);
   }
-  Print (L"SHENG KERNEL TRANSPORT PROBE\nBuild: %a\n", SHENG_KERNEL_PROBE_BUILD_ID);
+  if (SHENG_FULL_TRIAL_ROOT_READONLY) {
+    Print (L"SHENG ROOT READONLY PROBE\nBuild: %a\n", SHENG_KERNEL_PROBE_BUILD_ID);
+  } else {
+    Print (L"SHENG KERNEL TRANSPORT PROBE\nBuild: %a\n", SHENG_KERNEL_PROBE_BUILD_ID);
+  }
   Print (L"Page %u/%u  EFI app CurrentEL=%u (raw 0x%lx)\n",
          (UINT32)mPage + 1, PROBE_PAGE_COUNT, (UINT32)(mCurrentEl >> 2), mCurrentEl);
-  Print (L"This screen records UEFI transport; it does not prove XNU execution.\n\n");
+  if (SHENG_FULL_TRIAL_ROOT_READONLY) {
+    Print (L"Purpose: UFS root metadata diagnosis; expected probe 10 panic.\n\n");
+  } else {
+    Print (L"This screen records UEFI transport; it does not prove XNU execution.\n\n");
+  }
 
   if (mConfirming) {
-    Print (L"Confirm full XNU handoff\n\n");
-    Print (L"The full kernel and sidecars come from the verified read-only volume.\n");
+    if (SHENG_FULL_TRIAL_ROOT_READONLY) {
+      Print (L"Confirm ROOT READONLY diagnostic\n\n");
+      Print (L"Existing kernel probe 10 reads GPT/userdata metadata, then panics.\n");
+      Print (L"It stops before normal root publication or OS startup.\n");
+    } else {
+      Print (L"Confirm full XNU handoff\n\n");
+      Print (L"The full kernel and sidecars come from the verified read-only volume.\n");
+    }
     Print (L"Data persistence=0; UFS log/export=0.\n\n");
-    Print (L"%s Cancel\n%s BOOT FULL XNU ONCE\n\n",
-           mConfirmBoot ? L" " : L">", mConfirmBoot ? L">" : L" ");
+    if (SHENG_FULL_TRIAL_ROOT_READONLY) {
+      Print (L"%s Cancel\n%s RUN ROOT READONLY ONCE\n\n",
+             mConfirmBoot ? L" " : L">", mConfirmBoot ? L">" : L" ");
+    } else {
+      Print (L"%s Cancel\n%s BOOT FULL XNU ONCE\n\n",
+             mConfirmBoot ? L" " : L">", mConfirmBoot ? L">" : L" ");
+    }
     Print (L"Volume up/down selects; Power/Enter confirms. Esc cancels.\n");
     return;
   }
@@ -414,7 +446,13 @@ Draw (
       Print (L"\nExpected Data seed: %lu bytes\n", (UINT64)SHENG_FULL_TRIAL_RAMDISK_BYTES);
       break;
     case 3:
-      Print (L"> Boot full XNU once\n\n");
+      if (SHENG_FULL_TRIAL_ROOT_READONLY) {
+        Print (L"> Run ROOT READONLY diagnostic once\n\n");
+        Print (L"Expected result: userdata boundaries/magic and manifest status.\n");
+        Print (L"Probe 10 intentionally panics before normal root publication.\n\n");
+      } else {
+        Print (L"> Boot full XNU once\n\n");
+      }
       Print (L"Verified read-only volume: %s\nLoader protocol: %r\nBoot arguments checked: %s\nBoot available: %s\n",
              mVerifiedVolume ? L"YES" : L"NO", mLoaderStatus, mArgumentsSafe ? L"YES" : L"NO", CanBoot () ? L"YES" : L"NO");
       Print (L"Data persistence=0  UFS log/export=0\n");
@@ -498,7 +536,11 @@ BootFullKernel (
   Request.BootArgs = SHENG_FULL_TRIAL_ARGS;
   Request.Ramdisk = Seed;
   Request.RamdiskSize = (UINTN)Bytes;
-  Print (L"Calling DarwinBoot with the verified volume; no kernel checkpoint claimed.\n");
+  if (SHENG_FULL_TRIAL_ROOT_READONLY) {
+    Print (L"Calling DarwinBoot for ROOT READONLY probe 10; expect a diagnostic panic.\n");
+  } else {
+    Print (L"Calling DarwinBoot with the verified volume; no kernel checkpoint claimed.\n");
+  }
   Status = mLoader->Boot (mLoader, &Request);
   FreePool (Seed);
   return Status;

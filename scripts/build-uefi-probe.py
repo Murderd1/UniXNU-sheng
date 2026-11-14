@@ -27,7 +27,6 @@ TOOLS_COMMIT = 'd830d23b0d19c9322d906c21afeca1d6c54aeffe'
 UEFI_COMMIT = '66421cb7bb5694843aec8de1ca3d1de4c20cca38'
 EDK2_COMMIT = 'cfb93724a06ff86ff5ba971413368a7809ee42a5'
 APP_GUID = '9B665204-A133-47A2-9396-9E2B370A4E25'
-PROBE_BOOT_IMAGE = {'header_version': 4, 'pagesize': 4096}
 MENU_PAYLOAD_GUID = '79D77DA6-3053-4705-9B3C-18750AE7C3F1'
 MENU_DISK_INF = 'UefiMenuDisk/ShengMenuDiskDxe.inf'
 HELLO_INF = 'UniXNUPkg/Test/HelloPayload/HelloPayload.inf'
@@ -55,6 +54,24 @@ EXPECTED_CHECKPOINTS = (
 
 class ProbeError(Exception):
     pass
+
+
+def boot_image_policy(stage):
+    """Keep each diagnostic stage on its device-tested Android container."""
+    if stage == 'full':
+        return {'header_version': 3, 'pagesize': 4096}, (
+            'The full RAM trial published the supplied digest-verified FAT with Android header v3. '
+            'The matching v4 comparison received a different initrd; use v3 for full transport.')
+    if stage in ('probe', 'menu'):
+        return {'header_version': 4, 'pagesize': 4096}, (
+            'Standalone probe and menu stages passed visible interface and physical-input checks '
+            'with Android header v4; retain v4 for these firmware-only stages.')
+    raise ProbeError(f'Unknown UEFI diagnostic stage: {stage}')
+
+
+def validate_trial_mode(stage, root_readonly_probe):
+    if root_readonly_probe and stage != 'full':
+        raise ProbeError('--root-readonly-probe requires --stage full')
 
 
 def digest(path):
@@ -341,10 +358,41 @@ def self_test():
     menu_volume.render_config('self-test')
     if MENU_PAYLOAD_GUID.lower() not in (ROOT / 'package/UefiMenuDisk/ShengMenuDiskDxe.inf').read_text().lower():
         raise ProbeError('Menu disk RAW GUID contract changed')
-    print('PASS: GUID, standalone dependencies, build ID, checkpoints and evidence separation')
+    for stage, header in (('probe', 4), ('menu', 4), ('full', 3)):
+        image, reason = boot_image_policy(stage)
+        if image != {'header_version': header, 'pagesize': 4096} or f'header v{header}' not in reason:
+            raise ProbeError(f'{stage}: Android container selection/evidence contract failed')
+        image['header_version'] = 99
+        if boot_image_policy(stage)[0]['header_version'] != header:
+            raise ProbeError('Android container settings must not share mutable stage state')
+        validate_trial_mode(stage, False)
+        if stage != 'full':
+            try:
+                validate_trial_mode(stage, True)
+            except ProbeError:
+                pass
+            else:
+                raise ProbeError(f'{stage}: root-readonly mode must be rejected')
+    validate_trial_mode('full', True)
+    import uefi_full_trial
+    source_inputs = {'kernel_args': 'source-config-args', 'seed_bytes': 16,
+                     'image_sha256': 'intermediate-image', 'volume_sha256': 'unchanged-volume'}
+    for readonly in (False, True):
+        inputs = uefi_full_trial.handoff_inputs(source_inputs, readonly)
+        if any(inputs[key] != value for key, value in source_inputs.items()):
+            raise ProbeError('Trial mode changed source configuration or payload provenance')
+        expected = uefi_full_trial.root_readonly_args() if readonly else source_inputs['kernel_args']
+        if inputs['effective_handoff_args'] != expected or inputs['trial_mode'] != ('root-readonly-probe' if readonly else 'full-kernel'):
+            raise ProbeError('Trial handoff argument selection failed')
+        config = uefi_full_trial.render_app_config(inputs)
+        if ('#define SHENG_FULL_TRIAL_ARGS L' + json.dumps(expected)) not in config or f'#define SHENG_FULL_TRIAL_ROOT_READONLY {int(readonly)}\n' not in config:
+            raise ProbeError('Generated app configuration differs from effective handoff')
+    print('PASS: GUID, standalone dependencies, build ID, checkpoints, stage containers, root-readonly handoff and evidence separation')
 
 
 def build(args):
+    validate_trial_mode(args.stage, args.root_readonly_probe)
+    boot_image_overrides, boot_image_reason = boot_image_policy(args.stage)
     output = args.output.resolve()
     if output.exists():
         raise ProbeError(f'Output already exists; choose a fresh directory: {output}')
@@ -372,6 +420,8 @@ def build(args):
                 'uefi': UEFI_COMMIT, 'edk2': EDK2_COMMIT}, 'outputs': {},
                 'excluded_stages': ['kernel', 'payload', 'Data seed', 'IPSW', 'userdata flashing'],
                 'device_commands_executed': False}
+    if args.stage == 'full':
+        manifest['trial_mode'] = 'root-readonly-probe' if args.root_readonly_probe else 'full-kernel'
     write_json(output / 'manifest.json', manifest)
     checkpoints = checkpoints_document()
     if args.stage == 'menu':
@@ -384,16 +434,21 @@ def build(args):
                                      'exact FAT SHA256 verified', 'read-only payload files',
                                      'manual full XNU handoff', 'real XNU entry', 'platform initialization'],
                            acceptance='One device run. Transport, loader, actual XNU entry and platform initialization require distinct observations. A green loader bar alone does not prove XNU entry.')
+        if args.root_readonly_probe:
+            checkpoints.update(expected=['ROOT READONLY diagnostic app', 'exact FAT SHA256 verified',
+                                         'manual UFS root probe 10 handoff', 'userdata boundaries and magic',
+                                         'manifest status and windows on the diagnostic panic'],
+                               acceptance='Read-only root-layout diagnostic using the existing full kernel. Record the probe 10 panic; it intentionally stops before normal root publication and does not establish an OS boot.')
     write_json(output / 'checkpoints.json', checkpoints)
     try:
         clone_local(args.unixnu, tools, TOOLS_COMMIT, logs / 'sources.log')
         clone_local(args.uefi, uefi, UEFI_COMMIT, logs / 'sources.log')
         board = copy.deepcopy(tomllib.loads((ROOT / 'board.toml').read_text(encoding='utf-8')))
-        # A device comparison with identical kernel bytes reached the visible
-        # probe and working volume keys only with a v4 Android container.
-        # Override the isolated board copy; retain the repository's OS recipe.
-        board.setdefault('bootimg', {}).setdefault('image', {}).update(PROBE_BOOT_IMAGE)
-        manifest['probe_boot_image_overrides'] = dict(PROBE_BOOT_IMAGE)
+        # Full transport and firmware-only interfaces have separate tested
+        # containers. Override only this isolated board copy.
+        board.setdefault('bootimg', {}).setdefault('image', {}).update(boot_image_overrides)
+        manifest['probe_boot_image_overrides'] = dict(boot_image_overrides)
+        manifest['probe_boot_image_override_reason'] = boot_image_reason
         # Import genuine board binaries below rather than downloading the
         # unrelated Device-Binaries submodule or a second Mu_Basecore checkout.
         command(['git', '-C', uefi, 'submodule', 'update', '--init', '--recursive', '--depth', '1',
@@ -408,7 +463,7 @@ def build(args):
             import uefi_full_trial
             if not args.full_package:
                 raise ProbeError('--stage full requires --full-package at the audited complete package')
-            full_inputs = uefi_full_trial.prepare(args.full_package.resolve(), output)
+            full_inputs = uefi_full_trial.prepare(args.full_package.resolve(), output, args.root_readonly_probe)
             manifest['full_trial'] = full_inputs
             manifest['excluded_stages'] = ['native kernel compilation', 'IPSW download', 'Data seed creation', 'partition flashing']
             clone_remote('https://github.com/UniXNU/DarwinBoot.git', tree / 'drivers/DarwinBoot',
@@ -498,8 +553,8 @@ def build(args):
         bootimg.build(ctx, uefi, fd, tree / 'build/sheng/sheng.dtb',
                       ramdisk=output / 'full-volume.img' if args.stage == 'full' else None, output=output / 'boot.img')
         report = json.loads((output / 'boot.json').read_text())
-        if report['header_version'] != PROBE_BOOT_IMAGE['header_version']:
-            raise ProbeError('UEFI probe must use the v4 Android container')
+        if report['header_version'] != boot_image_overrides['header_version']:
+            raise ProbeError(f'{args.stage} stage must use the v{boot_image_overrides["header_version"]} Android container')
         expected_ramdisk = full_inputs['volume_bytes'] if full_inputs else 0
         if report['ramdisk_bytes'] != expected_ramdisk or report['hardware_tested']:
             raise ProbeError('UEFI image must match its expected ramdisk and have no hardware claim')
@@ -533,12 +588,15 @@ def main():
     parser.add_argument('--build-id', help='optional ASCII identifier; source hashes always remain in the manifest')
     parser.add_argument('--stage', choices=('probe', 'menu', 'full'), default='probe', help='probe: standalone UI; menu: embedded FAT fixture; full: existing complete XNU RAM trial')
     parser.add_argument('--full-package', type=Path, help='audited complete package directory for --stage full')
+    parser.add_argument('--root-readonly-probe', action='store_true', help='only with --stage full: run existing kernel UFS root probe 10 with the fixed read-only argument whitelist')
     parser.add_argument('-j', '--jobs', type=int, default=4)
     parser.add_argument('--prepare-only', action='store_true', help='stage isolated firmware sources and integration; do not import stock inputs or compile')
     parser.add_argument('--self-test', action='store_true', help='run offline standalone-app contract checks only')
     args = parser.parse_args()
     if args.jobs < 1:
         parser.error('--jobs must be positive')
+    if args.root_readonly_probe and args.stage != 'full':
+        parser.error('--root-readonly-probe requires --stage full')
     try:
         if args.self_test:
             self_test()

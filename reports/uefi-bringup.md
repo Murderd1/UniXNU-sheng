@@ -292,3 +292,64 @@ clears the v4 signature field, then removes its trailing 4096 zero bytes.
 The candidate is 185311232 bytes, SHA-256
 `da6935c048ace2c4f3f47cc7d73a88c0211a79aeabec6d3752bd43de2ebc104f`.
 This is a pending transport experiment, not a passed kernel boot.
+
+## Stage 3 device completion and stage 4 boundary
+
+The owner temporarily booted the same-body v3 candidate and photographed
+`VOLUME PUBLISHED`, both driver and range `Success`, and the matching build ID.
+The initrd `0xab270000..0xb7ffee86` contains exactly 30994054 vendor bytes followed
+by the 184549376-byte FAT. Its unaligned start `0xacffee86` was identified at
+one prefix and one boot-sector candidate; publication requires the full
+expected digest. This isolates the successful transport change to header v3.
+The standalone probe/menu stages retain their separately accepted v4 format.
+
+After physical confirmation, the complete kernel reached this visible panic:
+
+```
+SourceStorage: UFS start failed (root step 3: root manifest rejected) @SourceStorage.cpp:305
+```
+
+Direct symbol lookup in the actual FAT kernel (SHA-256
+`b8d0e71ccceffbb13023b8343a633db5f9f7b16de058b42d263c5d7c118a1c92`)
+identifies `native_source_storage_start.cold.3`, `native_source_storage_start`,
+`bsd_init`, `kernel_bootstrap_thread` and `Call_continuation` in the captured
+frames. This is real XNU execution through platform/IOKit initialization;
+it is stronger evidence than the green and blue bars alone. Stage 3 passed
+one complete run. The local frozen baseline is
+`out/baselines/stage-3-kernel-passed/`, with the exact image, firmware, complete
+FAT, source manifests, photos, device result and checksum list.
+
+At the pinned ShengUfs revision, root step 3 follows controller takeover,
+LUN0 readiness, GPT header/entry CRC checks, unique userdata identification
+and its first 4 KiB read. The error rejects that block's SHNGROOT manifest;
+it is not a verified-root policy signature error. The specific numeric
+manifest status was not in this photo. READ CAPACITY, root IOMedia publication,
+APFS mount, Data persistence and launchd are not established. Stage 4 remains
+unpassed. Restored Android lacking SHNGROOT is consistent with this result.
+
+Fastboot read-only queries subsequently report sheng, slot a, unlocked,
+userdata type f2fs, size `0x3a173bb000`, and logical/erase blocks `0x1000`.
+The retained first-install sparse image has the same expanded byte size, but
+its GPT endpoints and signed-root objects still need a current compatibility
+check. No userdata image has been flashed in these trials. The next diagnostic
+uses existing `native-ufs-probe=10` to display userdata endpoints, block-zero
+magic and manifest status, without opening root/store/log windows.
+
+The stage-4 mode reuses the same complete FAT and kernel but selects a fixed
+probe-10 handoff argument set, with optional WiFi/DPU features disabled and
+`log=0 data-persist=0`. The application validates the exact set and labels both
+its page and physical confirmation as a read-only root diagnosis. Source FAT
+arguments remain recorded separately from effective handoff arguments. The
+workflow builds this mode on development pushes and offers it manually only
+with the full stage. Its full FAT is extracted from boot.img for independent
+hash checks rather than uploaded a second time.
+
+A fresh host compatibility audit of the retained first-install sparse image
+read all 19887 sparse chunk headers and selected root metadata, verification
+objects and sample blocks. Expanded size and 4096-byte blocks match Fastboot.
+The SHNGROOT v2 manifest, both verification objects/table digests, RSA-3072
+signatures, actual boot policy envelope, actual kernel trust anchor and ADT
+root UUID match. OS/SystemOS APFS containers and sampled start/middle/end
+blocks agree with the signed tables. This does not replace a current device
+GPT check or a whole-image hash before installation. No root image has been
+written to the tablet.

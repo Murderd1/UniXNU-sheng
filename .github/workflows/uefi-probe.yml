@@ -38,6 +38,10 @@ on:
         description: "Audited complete images-27 package run (full stage only)"
         type: string
         default: "43467452829"
+      root_readonly_probe:
+        description: "Read-only root manifest diagnosis using the existing full kernel (full stage only)"
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -110,9 +114,11 @@ jobs:
         env:
           PREPARE_ONLY: ${{ inputs.prepare_only }}
           PROBE_STAGE: ${{ inputs.stage || 'full' }}
+          ROOT_READONLY_PROBE: ${{ github.event_name == 'push' || inputs.root_readonly_probe }}
         run: |
           args=(--unixnu probe-sources/UniXNU --uefi probe-sources/uefi-sheng --stage "$PROBE_STAGE" --output "probe-output-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}")
           [ "$PROBE_STAGE" != full ] || args+=(--full-package full-package/ipados-27.0.1-24A446/sheng_ipados27)
+          [ "$ROOT_READONLY_PROBE" != true ] || args+=(--root-readonly-probe)
           [ "$PREPARE_ONLY" != true ] || args+=(--prepare-only)
           python3 probe-sources/device/scripts/build-uefi-probe.py "${args[@]}" -j 4
       - name: preserve probe outputs and diagnostics
@@ -123,6 +129,8 @@ jobs:
           retention-days: 7
           if-no-files-found: warn
           # Do not upload work/ (vendor modules and source checkouts).
+          # The full FAT is already inside boot.img; extract its ramdisk to
+          # check the full-volume.img hash without uploading it twice.
           path: |
             probe-output-${{ github.run_id }}-${{ github.run_attempt }}/boot.img
             probe-output-${{ github.run_id }}-${{ github.run_attempt }}/SILICIUM_UEFI.fd
@@ -135,5 +143,4 @@ jobs:
             probe-output-${{ github.run_id }}-${{ github.run_attempt }}/menu-volume.img
             probe-output-${{ github.run_id }}-${{ github.run_attempt }}/menu-volume.json
             probe-output-${{ github.run_id }}-${{ github.run_attempt }}/full-trial-inputs.json
-            probe-output-${{ github.run_id }}-${{ github.run_attempt }}/full-volume.img
             probe-output-${{ github.run_id }}-${{ github.run_attempt }}/logs/**

@@ -85,6 +85,14 @@ manifest status, then stops at the diagnostic panic. Persistent Data and UFS
 log writes stay disabled. The uploaded artifact carries the FAT once inside
 `boot.img`; extract its Android ramdisk to verify `full-volume.img`'s recorded hash.
 
+For a later storage checkpoint, select `root_media_probe` in Actions, or use
+`--stage full --root-media-probe --handoff-code-clean`. It keeps the exact
+baseline and appends only `native-ufs-probe=12`, using the fixed driver's
+existing media-report thread. Its menu requires manual confirmation. The
+report can include the Data seed and does not establish root mounting or
+launchd. See [the media diagnostic](reports/root-media-probe.md) for its
+argument identity, timing and evidence limits.
+
 First restore a matching official Android package, retain the unlocked
 bootloader, and verify Android boot and Fastboot detection. One complete
 successful probe run satisfies the owner's acceptance requirement: a matching

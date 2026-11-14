@@ -182,7 +182,10 @@ def main():
             command = [args.cc, '/nologo', '/O2', '/W3', '/D_CRT_SECURE_NO_WARNINGS',
                        *[f'/I{path}' for path in includes], str(fixture), f'/Fe{executable}', f'/Fo{work / "probe-host.obj"}']
         else:
-            command = [args.cc, '-std=c11', '-O2', '-fshort-wchar', '-Werror', '-Wall', '-Wextra',
+            # The host mocks use the native C runtime's va_list (not the EFI
+            # Microsoft ABI varargs used by real X64 firmware). Keep this
+            # define out of the freestanding firmware compile below.
+            command = [args.cc, '-std=c11', '-O2', '-fshort-wchar', '-DNO_MSABI_VA_FUNCS', '-Werror', '-Wall', '-Wextra',
                        '-Wno-unused-parameter', '-Wno-missing-field-initializers',
                        *[argument for path in includes for argument in ('-I', str(path))], str(fixture), '-o', str(executable)]
         subprocess.run(command, check=True, cwd=work)

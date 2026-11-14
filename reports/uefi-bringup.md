@@ -55,6 +55,32 @@ UniXNU's documentation does not require that region. Record the recovery
 baseline and firmware input separately; their compatibility is not established
 by this host implementation.
 
+## Built probe evidence
+
+[Actions run 43557744330](https://github.com/Murderd1/UniXNU-sheng/actions/runs/43557744330)
+completed the full DEBUG build at device revision
+`9499728d6e7082da5840fa3d6a99b87a1654e9d5`. Its
+[artifact](https://github.com/Murderd1/UniXNU-sheng/actions/runs/43557744330/artifacts/14099800179)
+contains the following frozen outputs:
+
+| Output | Bytes | SHA-256 |
+| --- | ---: | --- |
+| `boot.img` | 1150976 | `3f3a6b44a29036bc2c57a6fba42f4fdd01ab0b77b1d40d3ab05114b37792a046` |
+| `SILICIUM_UEFI.fd` | 3145728 | `619582c6e7d0d774883341394dcc027165a9c46d3f756e88564218f21d3b05e7` |
+
+The displayed build ID is
+`sheng-uefi-9499728d6e70-61606b656389-20261114T044040Z`.
+The decompressed FV contains the probe application and its build ID; 55 FFS
+files and 32 APRIORI references were checked with no dangling references.
+The selected minimal firmware contains no vendor modules requiring byte
+comparison. Independent Windows checks passed all seven checksum entries,
+zero ramdisk, the ARM64 shim header, exact embedded FD equality and the
+appended DTB's `cont_splash_region` label and reservation.
+
+This is build evidence only. The image has not yet demonstrated bootloader
+acceptance, a visible UEFI screen or a received physical key. Later host-test
+portability fixes do not alter this frozen image or its recorded revision.
+
 ## Device evidence to collect
 
 For each of the three runs, save the image hash and manifest, photograph the
@@ -62,6 +88,15 @@ matching build ID and final run screen, record the physical key response and
 observe at least five minutes without a reset. Return manually to Fastboot and
 save host detection. Record failures and the last visible checkpoint before
 changing one input at a time. Do not mark stage 1 passed from the build report.
+
+Start input testing with a short volume-down press (`SCAN=0002`), followed by
+volume-up (`SCAN=0001`), and watch the `KEYS` count and `LAST` field. The
+unconditional `ShengKeyInputDxe` supplies this path in the minimal firmware;
+its SPMI access still requires device verification. A short power press maps
+to return (`CHAR=000D`). The minimal branch does not initialize USB host
+hardware, and the framebuffer serial library cannot receive characters, so
+USB keyboard support and the character commands `C/R/Y` are not acceptance
+requirements. Use the device's hardware combination to return to Fastboot.
 
 If `fastboot boot` also rejects the corresponding stock boot image, investigate
 that boot method first. A `Load Error` alone does not identify a UEFI driver

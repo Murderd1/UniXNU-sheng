@@ -59,9 +59,21 @@ FIELDS = {
     'STORE_WRITES': ('_native_ufs_store_wr_ops', 8, 0xfffffff00b963bd8),
     'STORE_SYNCS': ('_native_ufs_store_sync_ops', 8, 0xfffffff00b963be8),
     'PROCESS_COUNT': ('_nprocs', 4, 0xfffffff00b942a78),
+    'DISPLAY_STAGE': ('_native_legacy_stage', 4, 0xfffffff00b94b590),
+    'DISPLAY_CLIENT_CALLS': ('_native_legacy_client_calls', 4, 0xfffffff00b94c6a0),
+    'DISPLAY_CLIENT_PID': ('_native_legacy_client_pid', 4, 0xfffffff00b94c6a8),
+    'DISPLAY_CLIENT_STATUS': ('_native_legacy_client_status', 4, 0xfffffff00b85c0bc),
+    'DISPLAY_SWAPS': ('_native_legacy_swap_accepted_count', 4, 0xfffffff00b94c720),
+    'DISPLAY_TRANSFER_CALLS': ('_native_legacy_transfer_calls', 4, 0xfffffff00b94b668),
+    'DISPLAY_TRANSFER_STATUS': ('_native_legacy_transfer_status', 4, 0xfffffff00b85c0b8),
+    'DISPLAY_COPIES': ('_native_legacy_copy_n', 8, 0xfffffff00b94cfc0),
 }
 CALLS = {'kernel_IOSleep': ('_IOSleep', 0xfffffff00b422a48),
-         'kernel_panic': ('_panic', 0xfffffff00b768794)}
+         'kernel_panic': ('_panic', 0xfffffff00b768794),
+         'kernel_proc_name': ('_proc_name', 0xfffffff00b245634)}
+CALL_HASHES = {
+    'kernel_proc_name': (108, 'f685f65022f6ba21b9f13172c51f0e128230d1d82afd82b4a92386220088c51e'),
+}
 
 
 def digest(data):
@@ -207,10 +219,18 @@ def patch_kernel(data: bytes, workdir: Path):
                 for _, start, size, _, _ in segments):
             raise ValueError('Diagnostic field N_SECT/address/width differs: ' + name)
         resolved[macro] = {'symbol': name, 'va': hex(va), 'bytes': width}
-    for _, (name, expected) in CALLS.items():
+    calls = {}
+    for alias, (name, expected) in CALLS.items():
         if symbols.get(name) != expected:
             raise ValueError('Existing call target differs: ' + name)
         file_offset(segments, expected, 4)
+        calls[alias] = {'symbol': name, 'va': hex(expected)}
+        if alias in CALL_HASHES:
+            size, expected_hash = CALL_HASHES[alias]
+            call_at = file_offset(segments, expected, size)
+            if digest(data[call_at:call_at + size]) != expected_hash:
+                raise ValueError('Complete existing call target hash differs: ' + name)
+            calls[alias].update(bytes=size, sha256=expected_hash)
     workdir = Path(workdir).resolve()
     workdir.mkdir(parents=True, exist_ok=True)
     (workdir / 'RootStateProbeSymbols.h').write_text(''.join(
@@ -220,7 +240,7 @@ def patch_kernel(data: bytes, workdir: Path):
     compiler = tool('clang')
     common = [compiler, '--target=aarch64-none-elf', '-ffreestanding', '-fno-builtin',
               '-fno-stack-protector', '-fno-unwind-tables', '-fno-asynchronous-unwind-tables',
-              '-mgeneral-regs-only', '-fno-pic', '-mcmodel=tiny', '-Oz', '-Wall', '-Wextra', '-Werror']
+              '-mgeneral-regs-only', '-ffixed-x18', '-fno-pic', '-mcmodel=tiny', '-Oz', '-Wall', '-Wextra', '-Werror']
     command([*common, '-fstack-usage', '-I', workdir, '-c', sources[0], '-o', workdir / 'root-state.o'], workdir, 'compile-c')
     command([compiler, '--target=aarch64-none-elf', '-c', sources[1], '-o', workdir / 'root-state-abi.o'], workdir, 'compile-abi')
     script = workdir / 'root-state.ld'
@@ -273,14 +293,16 @@ def patch_kernel(data: bytes, workdir: Path):
                  'file_offset': cave_at, 'capacity': CAVE_END - CAVE_START, 'bytes': len(code),
                  'sha256': digest(code), 'whole_original_range_zero': True},
         'source_sha256': {str(path.relative_to(ROOT)): digest(path.read_bytes()) for path in sources},
-        'fields': resolved, 'maximum_static_stack_bytes': stack,
+        'fields': resolved, 'calls': calls, 'maximum_static_stack_bytes': stack,
         'conservative_probe_stack_bound_bytes': stack_bound, 'writable_data_bytes': 0,
         'tls_bytes': 0, 'remaining_relocations': 0,
-        'runtime': 'Existing probe13 starts the thread after startRoot; x0 seconds is reused by IOSleep(seconds*1000).',
-        'panic_abi': 'Explicit 16-byte aligned Darwin arm64 variadic stack slot; only existing panic is called.',
+        'runtime': 'Existing probe13 starts the thread after startRoot; x0 seconds is reused by IOSleep(seconds*1000), followed by field reads and at most two bounded proc_name queries.',
+        'panic_abi': 'Explicit 16-byte aligned Darwin arm64 variadic stack slot calls the existing panic; x18 is reserved.',
         'preserved': ['normal root path', 'existing panic renderer', 'log=0', 'data-persist=0',
                       'all kernel bytes outside one branch and verified zero padding'],
         'limits': ['Snapshot fields are sampled separately and are not atomic.',
+                   'proc_name queries only PID 1 and the sampled display client PID; names do not prove startup completion.',
+                   'proc_name uses existing process-reference synchronization; an empty name does not establish that the named process never ran.',
                    'Early RamBlock NotReady returns precede existing counters; zero counters do not exclude these requests.',
                    'Original earlier panics retain priority; a missing delayed screen is not evidence of a completed stage.'],
     }

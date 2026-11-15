@@ -11,7 +11,10 @@ typedef signed long long s64;
 #include "RootStateProbeSymbols.h"
 
 extern void kernel_IOSleep (unsigned int milliseconds);
+extern void kernel_proc_name (int pid, char *name, int size);
 extern __attribute__((noreturn)) void root_state_panic (const char *message);
+
+#define REPORT_CAPACITY 1152
 
 struct output {
   char *text;
@@ -20,7 +23,7 @@ struct output {
 
 static void put (struct output *out, char value)
 {
-  if (out->used < 1023) {
+  if (out->used < REPORT_CAPACITY - 1) {
     out->text[out->used++] = value;
   }
 }
@@ -72,7 +75,9 @@ static void device_field (struct output *out, const char *label, u64 address)
 __attribute__((noreturn, used, section(".text.root_state_entry")))
 void root_state_thread (void *argument, int wait_result)
 {
-  char buffer[1024];
+  char buffer[REPORT_CAPACITY];
+  char pid1_name[32];
+  char client_name[32];
   struct output out = { buffer, 0 };
   unsigned seconds = (unsigned)(u64)argument;
   (void)wait_result;
@@ -115,6 +120,31 @@ void root_state_thread (void *argument, int wait_result)
   unsigned_field (&out, " syncs=", STORE_SYNCS, 8);
   signed_field (&out, "\nnprocs=", PROCESS_COUNT);
   text (&out, "\ncounters: early NotReady untracked");
+  // Query two fixed PIDs from this independent worker; no process traversal.
+  kernel_proc_name (1, pid1_name, sizeof (pid1_name));
+  s32 client_pid = *(volatile const s32 *)DISPLAY_CLIENT_PID;
+  client_name[0] = 0;
+  if (client_pid > 0) {
+    kernel_proc_name (client_pid, client_name, sizeof (client_name));
+  }
+  pid1_name[sizeof (pid1_name) - 1] = 0;
+  client_name[sizeof (client_name) - 1] = 0;
+  text (&out, "\npid1 name=");
+  text (&out, pid1_name);
+  unsigned_field (&out, "\ndisplay stage=", DISPLAY_STAGE, 4);
+  unsigned_field (&out, " client calls=", DISPLAY_CLIENT_CALLS, 4);
+  text (&out, " pid=");
+  if (client_pid < 0) {
+    put (&out, '-');
+  }
+  number (&out, client_pid < 0 ? (u64)-(s64)client_pid : (u64)client_pid, 10);
+  text (&out, " name=");
+  text (&out, client_name);
+  signed_field (&out, " status=", DISPLAY_CLIENT_STATUS);
+  unsigned_field (&out, " swaps=", DISPLAY_SWAPS, 4);
+  unsigned_field (&out, "\ntransfer calls=", DISPLAY_TRANSFER_CALLS, 4);
+  signed_field (&out, " status=", DISPLAY_TRANSFER_STATUS);
+  unsigned_field (&out, " copies=", DISPLAY_COPIES, 8);
   buffer[out.used] = 0;
   root_state_panic (buffer);
 }

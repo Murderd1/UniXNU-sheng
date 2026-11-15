@@ -93,6 +93,16 @@ report can include the Data seed and does not establish root mounting or
 launchd. See [the media diagnostic](reports/root-media-probe.md) for its
 argument identity, timing and evidence limits.
 
+For the authorized first Data initialization, use
+`--stage full --root-data-init --handoff-code-clean`, or manually select
+`root_data_init` with `stage=full` and handoff code cleaning in Actions. This
+opt-in mode keeps the original FAT/kernel and `log=0`, changes the effective
+handoff to `data-persist=2 data-reset=1`, and continues startup without a
+diagnostic stop. Its physical confirmation defaults to Cancel. Reset discards
+overlay changes: use it only for first initialization, then use a normal image
+with `data-persist=2` and no reset. The existing full-root trial remains
+`data-persist=0`. See [first Data initialization](reports/root-data-init.md).
+
 First restore a matching official Android package, retain the unlocked
 bootloader, and verify Android boot and Fastboot detection. One complete
 successful probe run satisfies the owner's acceptance requirement: a matching

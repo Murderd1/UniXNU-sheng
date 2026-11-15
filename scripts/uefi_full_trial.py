@@ -149,19 +149,93 @@ def patch_root_state_volume(payload, fat_module, workdir):
     return updated, report
 
 
-def prepare(source, output, root_readonly_probe=False, full_root_trial=False, root_media_probe=False, root_state_probe=False):
-    # Validate arguments and mode before repacking or compiling a diagnostic.
+def media_baseline_inputs(source, fat_module):
+    """Recover only the fixed, already audited media artifact's actual FAT."""
+    source = Path(source).resolve(strict=True)
+    expected = {
+        'boot.img': 'f553d3b589171b6199c8b09a44e246e0d3f5d22b88f6519e27973ab0dc702295',
+        'manifest.json': '9671d33dba5139fbffdb6d75632a4d768b8597f0ba4e3e7d800d17ca0a945dcd',
+        'full-trial-inputs.json': '2e393ce8140e0b65f4baa76a8a89fb7c6bb2056e56cf98ca1e3eed816a230be2',
+    }
+    blobs = {}
+    for name, digest in expected.items():
+        path = (source / name).resolve(strict=True)
+        if not path.is_file() or path.parent != source:
+            raise ValueError('Media baseline file escapes the artifact: ' + name)
+        blobs[name] = path.read_bytes()
+        if fat_module.sha(blobs[name]) != digest:
+            raise ValueError('Fixed media baseline digest differs: ' + name)
+    manifest = json.loads(blobs['manifest.json'])
+    report = json.loads(blobs['full-trial-inputs.json'])
+    revision = '829b1e5cd5f0aa1269f01dba2f351b52fc4b6e7b'
+    build_id = 'sheng-full-829b1e5cd5f0-7fec410cf30a-20261114T163718Z'
+    identity = '7fec410cf30a7fc7eb10f089ce98a700a9222945609aa04e18a7b451bf644d7c'
+    if (manifest['revisions']['device'] != revision or manifest['build_id'] != build_id or
+            manifest['source_identity_sha256'] != identity or manifest['full_trial'] != report or
+            (manifest['kind'], manifest['stage'], manifest['status'], manifest['trial_mode']) !=
+            ('sheng-full', 'full', 'built', 'root-media-probe')):
+        raise ValueError('Fixed media baseline source identity or mode differs')
+    if (report['kernel_args'] != full_root_args() or report['effective_handoff_args'] != root_media_args() or
+            report['data_persistence'] != 0 or report['native_ufs_log_and_export'] != 0 or
+            report['install_entry_present'] is not False or report['all_entries_require_confirmation'] is not True):
+        raise ValueError('Fixed media baseline argument or confirmation policy differs')
+    image = blobs['boot.img']
+    kernel_bytes, size, _, header_bytes = struct.unpack_from('<4I', image, 8)
+    start = 4096 + ((kernel_bytes + 4095) // 4096) * 4096
+    if (len(image) != 185311232 or image[:8] != b'ANDROID!' or
+            struct.unpack_from('<I', image, 40)[0] != 3 or header_bytes != 1580 or
+            size != 184549376 or len(image) != start + ((size + 4095) // 4096) * 4096 or
+            any(image[4096 + kernel_bytes:start]) or any(image[start + size:])):
+        raise ValueError('Fixed media baseline Android v3 layout differs')
+    payload = image[start:start + size]
+    volume_sha = 'f46ba1674303a37e89dd0e8ad24fe54ed43cd63c7dd29001216b87f36634ed68'
+    if (fat_module.sha(payload) != volume_sha or report['volume_sha256'] != volume_sha or
+            report['ramdisk_sha256'] != volume_sha or report['volume_bytes'] != size):
+        raise ValueError('Fixed media baseline actual FAT differs')
+    disk = fat_module.Fat32(payload)
+    files = disk.files()
+    actual_files = {name: fat_module.sha(disk.read(entry)) for name, entry in files.items()}
+    if actual_files != report['payload_files']:
+        raise ValueError('Fixed media baseline payload inventory differs')
+    config_name = 'EFI/UniXNU/unixnu.toml'
+    config = tomllib.loads(disk.read(files[config_name]).decode('utf-8'))
+    xnu = [entry for entry in config['entry'] if entry['id'] == 'xnu']
+    if len(xnu) != 1 or xnu[0]['args'] != full_root_args() or any(not entry.get('confirm') for entry in config['entry']):
+        raise ValueError('Fixed media baseline actual FAT arguments or confirmation differs')
+    report['source_baseline'] = {
+        'kind': 'fixed-root-media-artifact', 'run_id': '43616475669',
+        'artifact_name': 'uefi-probe-43616475669-1', 'source_revision': revision,
+        'source_identity_sha256': identity, 'build_id': build_id,
+        'boot_image_sha256': expected['boot.img'], 'boot_image_bytes': len(image), 'boot_header_version': 3,
+        'manifest_sha256': expected['manifest.json'], 'full_trial_inputs_sha256': expected['full-trial-inputs.json'],
+        'volume_sha256': volume_sha, 'volume_bytes': size,
+        'recovered_from_actual_boot_ramdisk': True, 'original_package_files_recreated': False,
+        'source_revisions_scope': 'Preserved original package lineage from the digest-pinned full-trial-inputs report.',
+    }
+    report['header_version_scope'] = 'Historical original package repack report; media baseline boot header is source_baseline.boot_header_version.'
+    report['kernel_field_unchanged_scope'] = 'Historical Android firmware field of the original package repack; the diagnostic XNU file change is recorded separately.'
+    return payload, report
+
+
+def prepare(source, output, root_readonly_probe=False, full_root_trial=False, root_media_probe=False, root_state_probe=False,
+            *, media_baseline=None):
+    # Validate arguments and mode before reading, repacking or compiling a diagnostic.
     trial_mode(root_readonly_probe, full_root_trial, root_media_probe, root_state_probe)
+    if media_baseline is not None and (not root_state_probe or source is not None):
+        raise ValueError('A media baseline is exclusive to root-state and cannot be combined with a package source')
     spec = importlib.util.spec_from_file_location('full_repack', ROOT / 'scripts/repack-sheng-full-trial.py')
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
-    repacked = output / 'work/full-input'
-    module.repack(source, repacked)
-    report = json.loads((repacked / 'manifest.json').read_text())
-    image = (repacked / 'boot.img').read_bytes()
-    kernel_bytes, size = struct.unpack_from('<II', image, 8)
-    start = 4096 + ((kernel_bytes + 4095) // 4096) * 4096
-    payload = image[start:start + size]
+    if media_baseline is not None:
+        payload, report = media_baseline_inputs(media_baseline, module)
+    else:
+        repacked = output / 'work/full-input'
+        module.repack(source, repacked)
+        report = json.loads((repacked / 'manifest.json').read_text())
+        image = (repacked / 'boot.img').read_bytes()
+        kernel_bytes, size = struct.unpack_from('<II', image, 8)
+        start = 4096 + ((kernel_bytes + 4095) // 4096) * 4096
+        payload = image[start:start + size]
     if root_state_probe:
         original_payload_sha = module.sha(payload)
         payload, kernel_patch = patch_root_state_volume(payload, module, output / 'logs/root-state-patch')
@@ -174,7 +248,9 @@ def prepare(source, output, root_readonly_probe=False, full_root_trial=False, ro
         report['complete_kernel_and_all_sidecars_unchanged'] = False
         report['all_sidecars_unchanged'] = True
         report['only_changed_payload_files'] = [report.pop('only_changed_payload_file'), 'EFI/UniXNU/Payloads/kernel.macho']
-        report['image_sha256_scope'] = 'Original intermediate repack before the root-state diagnostic; final FAT hash is volume_sha256.'
+        report['image_sha256_scope'] = ('Historical original package repack report, not the media baseline boot or final diagnostic boot; '
+                                       'final FAT hash is volume_sha256.' if media_baseline is not None else
+                                       'Original intermediate repack before the root-state diagnostic; final FAT hash is volume_sha256.')
         report['ramdisk_sha256'] = module.sha(payload)
         report['payload_files']['EFI/UniXNU/Payloads/kernel.macho'] = kernel_patch['output_sha256']
     path = output / 'full-volume.img'
@@ -183,7 +259,7 @@ def prepare(source, output, root_readonly_probe=False, full_root_trial=False, ro
     files = disk.files()
     seed_entry = files['EFI/UniXNU/Payloads/scratch-data.img']
     report['seed_bytes'] = seed_entry[2]
-    report['volume_bytes'] = size
+    report['volume_bytes'] = len(payload)
     report['volume_sha256'] = module.sha(payload)
     report['boot_sector_sha256'] = module.sha(payload[:512])
     report['boot_prefix_hex'] = payload[:16].hex()

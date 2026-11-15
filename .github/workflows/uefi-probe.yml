@@ -151,9 +151,14 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           FULL_PACKAGE_RUN: ${{ inputs.full_package_run || '43467452829' }}
+          ROOT_STATE_PROBE: ${{ github.event_name == 'workflow_dispatch' && inputs.root_state_probe }}
         run: |
           test "$FULL_PACKAGE_RUN" = 43467452829
-          gh run download "$FULL_PACKAGE_RUN" --repo "$GITHUB_REPOSITORY" --name images-27 --dir full-package
+          if [ "$ROOT_STATE_PROBE" = true ]; then
+            gh run download 43616475669 --repo "$GITHUB_REPOSITORY" --name uefi-probe-43616475669-1 --dir full-media-baseline
+          else
+            gh run download "$FULL_PACKAGE_RUN" --repo "$GITHUB_REPOSITORY" --name images-27 --dir full-package
+          fi
       - name: build isolated DEBUG probe
         env:
           PREPARE_ONLY: ${{ inputs.prepare_only }}
@@ -165,7 +170,13 @@ jobs:
           HANDOFF_CODE_CLEAN: ${{ github.event_name == 'push' || inputs.handoff_code_clean }}
         run: |
           args=(--unixnu probe-sources/UniXNU --uefi probe-sources/uefi-sheng --stage "$PROBE_STAGE" --output "probe-output-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}")
-          [ "$PROBE_STAGE" != full ] || args+=(--full-package full-package/ipados-27.0.1-24A446/sheng_ipados27)
+          if [ "$PROBE_STAGE" = full ]; then
+            if [ "$ROOT_STATE_PROBE" = true ]; then
+              args+=(--full-media-baseline full-media-baseline)
+            else
+              args+=(--full-package full-package/ipados-27.0.1-24A446/sheng_ipados27)
+            fi
+          fi
           [ "$ROOT_READONLY_PROBE" != true ] || args+=(--root-readonly-probe)
           [ "$FULL_ROOT_TRIAL" != true ] || args+=(--full-root-trial)
           [ "$ROOT_MEDIA_PROBE" != true ] || args+=(--root-media-probe)

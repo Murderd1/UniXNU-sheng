@@ -475,6 +475,10 @@ def self_test():
 def build(args):
     validate_trial_mode(args.stage, args.root_readonly_probe, args.handoff_code_clean, args.full_root_trial,
                         args.root_media_probe, args.root_state_probe)
+    if args.full_media_baseline and not args.root_state_probe:
+        raise ProbeError('--full-media-baseline is qualified only for --root-state-probe')
+    if args.full_media_baseline and args.full_package:
+        raise ProbeError('--full-media-baseline and --full-package are mutually exclusive')
     boot_image_overrides, boot_image_reason = boot_image_policy(args.stage)
     output = args.output.resolve()
     if output.exists():
@@ -562,11 +566,12 @@ def build(args):
         full_inputs = None
         if args.stage == 'full':
             import uefi_full_trial
-            if not args.full_package:
-                raise ProbeError('--stage full requires --full-package at the audited complete package')
-            full_inputs = uefi_full_trial.prepare(args.full_package.resolve(), output,
+            if not args.full_package and not args.full_media_baseline:
+                raise ProbeError('--stage full requires its audited complete package or explicit root-state media baseline')
+            full_inputs = uefi_full_trial.prepare(args.full_package.resolve() if args.full_package else None, output,
                                                  args.root_readonly_probe, args.full_root_trial,
-                                                 args.root_media_probe, args.root_state_probe)
+                                                 args.root_media_probe, args.root_state_probe,
+                                                 media_baseline=args.full_media_baseline.resolve() if args.full_media_baseline else None)
             manifest['full_trial'] = full_inputs
             manifest['excluded_stages'] = ['native kernel compilation', 'IPSW download', 'Data seed creation', 'partition flashing']
             clone_remote('https://github.com/UniXNU/DarwinBoot.git', tree / 'drivers/DarwinBoot',
@@ -702,6 +707,7 @@ def main():
     parser.add_argument('--output', type=Path, default=ROOT / 'out/uefi-probe', help='fresh output directory (must not exist)')
     parser.add_argument('--build-id', help='optional ASCII identifier; source hashes always remain in the manifest')
     parser.add_argument('--stage', choices=('probe', 'menu', 'full'), default='probe', help='probe: standalone UI; menu: embedded FAT fixture; full: existing complete XNU RAM trial')
+    parser.add_argument('--full-media-baseline', type=Path, help='root-state only: fixed accepted media artifact directory when original complete package expired')
     parser.add_argument('--full-package', type=Path, help='audited complete package directory for --stage full')
     parser.add_argument('--root-readonly-probe', action='store_true', help='only with --stage full: run existing kernel UFS root probe 10 with the fixed read-only argument whitelist')
     parser.add_argument('--full-root-trial', action='store_true', help='only with --stage full --handoff-code-clean: use the exact 775-byte baseline without a native UFS probe; log and Data persistence remain disabled')

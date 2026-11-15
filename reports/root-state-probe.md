@@ -46,3 +46,12 @@ blind spot with any photographed report.
 
 This is a diagnostic build contract. Host checks, a successful cloud build
 and Fastboot acceptance remain separate from actual device evidence.
+
+If the original complete-package artifact has expired, the state diagnostic
+can take `--full-media-baseline` instead of `--full-package`. This entry is
+restricted to the accepted probe-12 artifact: it verifies its fixed boot
+image, source identity and exact original FAT/payload hashes before extracting
+the kernel. It preserves the original input provenance and reports the media
+artifact as its immediate source. It does not recreate or claim to download
+the missing original package. Both sources must produce the identical patched
+FAT for the same small-probe compiler.

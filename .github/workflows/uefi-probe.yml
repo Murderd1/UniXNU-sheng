@@ -189,7 +189,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: uefi-probe-${{ github.run_id }}-${{ github.run_attempt }}
-          retention-days: 7
+          retention-days: 90
           if-no-files-found: warn
           # Do not upload work/ (vendor modules and source checkouts).
           # The full FAT is already inside boot.img; extract its ramdisk to

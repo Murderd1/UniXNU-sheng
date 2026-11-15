@@ -3,7 +3,8 @@ name: package
 # scripts/package.sh of this repository on a macOS runner, with the UniXNU and uefi-sheng
 # checkouts beside it, the layout board.toml names. The platform seed comes from the
 # repository secret UNIXNU_UNIQUE_CHIP_ID and is baked into the images, so the run's
-# artifacts belong to one device alone: download them, then delete the run.
+# artifacts belong to one device alone. Keep complete inputs and downloaded artifacts
+# with SHA-256 checksums; 90-day Actions retention does not replace local backups.
 
 on:
   workflow_dispatch:
@@ -99,7 +100,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: first-install-userdata-27
-          retention-days: 1
+          retention-days: 90
           if-no-files-found: error
           path: |
             UniXNU/out/sheng/*/*/userdata/userdata-first-install.img
@@ -269,7 +270,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: installation-seed-${{ inputs.os }}
-          retention-days: 1
+          retention-days: 90
           path: |
             UniXNU/out/sheng/*/*/runtime/data.dbr
             UniXNU/out/sheng/*/*/runtime/inputs.json
@@ -278,7 +279,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: build-logs-${{ inputs.os }}
-          retention-days: 1
+          retention-days: 90
           if-no-files-found: ignore
           path: |
             UniXNU/out/sheng/*/*/logs/*.log
@@ -287,7 +288,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: images-${{ inputs.os }}
-          retention-days: 1
+          retention-days: 90
           if-no-files-found: error
           path: |
             UniXNU/out/sheng/*/*/boot/boot.img

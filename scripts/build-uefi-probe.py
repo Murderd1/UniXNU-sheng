@@ -618,7 +618,7 @@ def build(args):
         # Scripts locate caches from their own path: these isolated copies use
         # only tree/.cache, never an existing installation or normal build cache.
         command([sys.executable, tree / 'scripts/download-sheng-firmware.py'], cwd=tree, env=env, log=logs / 'stock-inputs.log')
-        command([sys.executable, tree / 'scripts/extract-sheng-firmware.py', '--delete-archive'], cwd=tree, env=env, log=logs / 'stock-inputs.log')
+        command([sys.executable, tree / 'scripts/extract-sheng-firmware.py'], cwd=tree, env=env, log=logs / 'stock-inputs.log')
         command([sys.executable, tree / 'scripts/fetch-sheng-dts.py'], cwd=tree, env=env, log=logs / 'dts.log')
         command([sys.executable, tree / 'scripts/import-sheng-uefi.py'], cwd=tree, env=env, log=logs / 'vendor-import.log')
         command([sys.executable, tree / 'scripts/check-sheng.py'], cwd=tree, env=env, log=logs / 'memory-map.log')

@@ -34,9 +34,9 @@ on:
         type: boolean
         default: false
       stage:
-        description: "Independent firmware stage"
+        description: "Firmware stage; full-resume boots the installed system with existing Data"
         type: choice
-        options: ["full", "menu", "probe"]
+        options: ["full", "full-resume", "menu", "probe"]
         default: "menu"
       full_package_run:
         description: "Audited complete images-27 package run (full stage only)"
@@ -124,17 +124,20 @@ jobs:
           ROOT_MEDIA_PROBE: ${{ inputs.root_media_probe }}
           ROOT_STATE_PROBE: ${{ inputs.root_state_probe }}
           ROOT_DATA_INIT: ${{ inputs.root_data_init }}
+          ROOT_DATA_RESUME: ${{ inputs.stage == 'full-resume' }}
           HANDOFF_CODE_CLEAN: ${{ inputs.handoff_code_clean }}
         run: |
+          [ "$PROBE_STAGE" != full-resume ] || PROBE_STAGE=full
           modes=0
           [ "$ROOT_READONLY_PROBE" != true ] || modes=$((modes + 1))
           [ "$FULL_ROOT_TRIAL" != true ] || modes=$((modes + 1))
           [ "$ROOT_MEDIA_PROBE" != true ] || modes=$((modes + 1))
           [ "$ROOT_STATE_PROBE" != true ] || modes=$((modes + 1))
           [ "$ROOT_DATA_INIT" != true ] || modes=$((modes + 1))
+          [ "$ROOT_DATA_RESUME" != true ] || modes=$((modes + 1))
           test "$modes" -le 1
           if [ "$modes" -gt 0 ]; then test "$PROBE_STAGE" = full; fi
-          if [ "$FULL_ROOT_TRIAL" = true ] || [ "$ROOT_MEDIA_PROBE" = true ] || [ "$ROOT_STATE_PROBE" = true ] || [ "$ROOT_DATA_INIT" = true ]; then
+          if [ "$FULL_ROOT_TRIAL" = true ] || [ "$ROOT_MEDIA_PROBE" = true ] || [ "$ROOT_STATE_PROBE" = true ] || [ "$ROOT_DATA_INIT" = true ] || [ "$ROOT_DATA_RESUME" = true ]; then
             test "$HANDOFF_CODE_CLEAN" = true
           fi
           if [ "$HANDOFF_CODE_CLEAN" = true ]; then
@@ -142,26 +145,27 @@ jobs:
             test "$modes" -eq 1
           fi
       - uses: actions/checkout@v4
-        if: inputs.stage == 'full' || github.event_name == 'push'
+        if: inputs.stage == 'full' || inputs.stage == 'full-resume' || github.event_name == 'push'
         with:
           repository: microsoft/mu_basecore
           ref: cfb93724a06ff86ff5ba971413368a7809ee42a5
           path: probe-host-headers
           submodules: false
       - name: full-kernel probe host checks before large downloads
-        if: inputs.stage == 'full' || github.event_name == 'push'
+        if: inputs.stage == 'full' || inputs.stage == 'full-resume' || github.event_name == 'push'
         run: |
           python3 probe-sources/device/scripts/check-uefi-kernel-probe.py --edk2 probe-host-headers --unixnu probe-sources/UniXNU --cc cc --aarch64-cc clang
       - name: retrieve audited complete package
-        if: inputs.stage == 'full' || github.event_name == 'push'
+        if: inputs.stage == 'full' || inputs.stage == 'full-resume' || github.event_name == 'push'
         env:
           GH_TOKEN: ${{ github.token }}
           FULL_PACKAGE_RUN: ${{ inputs.full_package_run || '43467452829' }}
           ROOT_STATE_PROBE: ${{ github.event_name == 'workflow_dispatch' && inputs.root_state_probe }}
           ROOT_DATA_INIT: ${{ github.event_name == 'workflow_dispatch' && inputs.root_data_init }}
+          ROOT_DATA_RESUME: ${{ github.event_name == 'workflow_dispatch' && inputs.stage == 'full-resume' }}
         run: |
           test "$FULL_PACKAGE_RUN" = 43467452829
-          if [ "$ROOT_STATE_PROBE" = true ] || [ "$ROOT_DATA_INIT" = true ]; then
+          if [ "$ROOT_STATE_PROBE" = true ] || [ "$ROOT_DATA_INIT" = true ] || [ "$ROOT_DATA_RESUME" = true ]; then
             gh run download 43616475669 --repo "$GITHUB_REPOSITORY" --name uefi-probe-43616475669-1 --dir full-media-baseline
           else
             gh run download "$FULL_PACKAGE_RUN" --repo "$GITHUB_REPOSITORY" --name images-27 --dir full-package
@@ -175,11 +179,13 @@ jobs:
           ROOT_MEDIA_PROBE: ${{ github.event_name == 'workflow_dispatch' && inputs.root_media_probe }}
           ROOT_STATE_PROBE: ${{ github.event_name == 'workflow_dispatch' && inputs.root_state_probe }}
           ROOT_DATA_INIT: ${{ github.event_name == 'workflow_dispatch' && inputs.root_data_init }}
+          ROOT_DATA_RESUME: ${{ github.event_name == 'workflow_dispatch' && inputs.stage == 'full-resume' }}
           HANDOFF_CODE_CLEAN: ${{ github.event_name == 'push' || inputs.handoff_code_clean }}
         run: |
+          [ "$PROBE_STAGE" != full-resume ] || PROBE_STAGE=full
           args=(--unixnu probe-sources/UniXNU --uefi probe-sources/uefi-sheng --stage "$PROBE_STAGE" --output "probe-output-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}")
           if [ "$PROBE_STAGE" = full ]; then
-            if [ "$ROOT_STATE_PROBE" = true ] || [ "$ROOT_DATA_INIT" = true ]; then
+            if [ "$ROOT_STATE_PROBE" = true ] || [ "$ROOT_DATA_INIT" = true ] || [ "$ROOT_DATA_RESUME" = true ]; then
               args+=(--full-media-baseline full-media-baseline)
             else
               args+=(--full-package full-package/ipados-27.0.1-24A446/sheng_ipados27)
@@ -190,6 +196,7 @@ jobs:
           [ "$ROOT_MEDIA_PROBE" != true ] || args+=(--root-media-probe)
           [ "$ROOT_STATE_PROBE" != true ] || args+=(--root-state-probe)
           [ "$ROOT_DATA_INIT" != true ] || args+=(--root-data-init)
+          [ "$ROOT_DATA_RESUME" != true ] || args+=(--root-data-resume)
           [ "$HANDOFF_CODE_CLEAN" != true ] || args+=(--handoff-code-clean)
           [ "$PREPARE_ONLY" != true ] || args+=(--prepare-only)
           python3 probe-sources/device/scripts/build-uefi-probe.py "${args[@]}" -j 4

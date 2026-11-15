@@ -27,8 +27,13 @@
 #include "ShengRootMediaArgs.h"
 #include "ShengRootStateArgs.h"
 #include "ShengRootDataInitArgs.h"
+#include "ShengRootDataResumeArgs.h"
 
 // Older generated read-only fixtures remain valid and cannot select this mode.
+#ifndef SHENG_FULL_TRIAL_ROOT_DATA_RESUME
+#define SHENG_FULL_TRIAL_ROOT_DATA_RESUME 0
+#endif
+
 #ifndef SHENG_FULL_TRIAL_ROOT_DATA_INIT
 #define SHENG_FULL_TRIAL_ROOT_DATA_INIT 0
 #endif
@@ -135,8 +140,12 @@ CheckArguments (
   ArgumentLength = StrLen (Token);
   if ((ArgumentLength > 1000) ||
       ((!!SHENG_FULL_TRIAL_ROOT_READONLY + !!SHENG_FULL_TRIAL_ROOT_MEDIA + !!SHENG_FULL_TRIAL_ROOT_STATE +
-        !!SHENG_FULL_TRIAL_ROOT_DATA_INIT) > 1)) {
+        !!SHENG_FULL_TRIAL_ROOT_DATA_INIT + !!SHENG_FULL_TRIAL_ROOT_DATA_RESUME) > 1)) {
     return FALSE;
+  }
+  if (SHENG_FULL_TRIAL_ROOT_DATA_RESUME) {
+    return (BOOLEAN)((ArgumentLength == StrLen (SHENG_ROOT_DATA_RESUME_ARGS)) &&
+                     (StrnCmp (Token, SHENG_ROOT_DATA_RESUME_ARGS, ArgumentLength) == 0));
   }
   if (SHENG_FULL_TRIAL_ROOT_DATA_INIT) {
     // This independent exact whitelist alone authorizes store writes/reset.
@@ -412,7 +421,9 @@ Draw (
     gST->ConOut->SetAttribute (gST->ConOut, EFI_LIGHTGRAY | EFI_BACKGROUND_BLACK);
     gST->ConOut->ClearScreen (gST->ConOut);
   }
-  if (SHENG_FULL_TRIAL_ROOT_DATA_INIT) {
+  if (SHENG_FULL_TRIAL_ROOT_DATA_RESUME) {
+    Print (L"SHENG NORMAL DATA STARTUP\nBuild: %a\n", SHENG_KERNEL_PROBE_BUILD_ID);
+  } else if (SHENG_FULL_TRIAL_ROOT_DATA_INIT) {
     Print (L"SHENG FIRST DATA INITIALIZATION\nBuild: %a\n", SHENG_KERNEL_PROBE_BUILD_ID);
   } else if (SHENG_FULL_TRIAL_ROOT_STATE) {
     Print (L"SHENG ROOT STATE PROBE\nBuild: %a\n", SHENG_KERNEL_PROBE_BUILD_ID);
@@ -425,7 +436,9 @@ Draw (
   }
   Print (L"Page %u/%u  EFI app CurrentEL=%u (raw 0x%lx)\n",
          (UINT32)mPage + 1, PROBE_PAGE_COUNT, (UINT32)(mCurrentEl >> 2), mCurrentEl);
-  if (SHENG_FULL_TRIAL_ROOT_DATA_INIT) {
+  if (SHENG_FULL_TRIAL_ROOT_DATA_RESUME) {
+    Print (L"Purpose: start the full system with existing Data; no reset.\n\n");
+  } else if (SHENG_FULL_TRIAL_ROOT_DATA_INIT) {
     Print (L"Purpose: initialize the Data overlay, then start the full system.\n\n");
   } else if (SHENG_FULL_TRIAL_ROOT_STATE) {
     Print (L"Purpose: show root, SystemOS and Data startup state after 30 seconds.\n\n");
@@ -438,7 +451,10 @@ Draw (
   }
 
   if (mConfirming) {
-    if (SHENG_FULL_TRIAL_ROOT_DATA_INIT) {
+    if (SHENG_FULL_TRIAL_ROOT_DATA_RESUME) {
+      Print (L"Confirm normal full-system startup\n\n");
+      Print (L"Uses existing Data overlay; no initialization or reset is requested.\n");
+    } else if (SHENG_FULL_TRIAL_ROOT_DATA_INIT) {
       Print (L"Confirm FIRST DATA initialization and startup\n\n");
       Print (L"Reset discards existing Data overlay changes and starts from the saved seed.\n");
       Print (L"This enables persistent Data writes, then starts the full system.\n");
@@ -459,12 +475,17 @@ Draw (
       Print (L"Confirm full XNU handoff\n\n");
       Print (L"The full kernel and sidecars come from the verified read-only volume.\n");
     }
-    if (SHENG_FULL_TRIAL_ROOT_DATA_INIT) {
+    if (SHENG_FULL_TRIAL_ROOT_DATA_RESUME) {
+      Print (L"Data persistence=2; reset absent; UFS log/export=0.\n\n");
+    } else if (SHENG_FULL_TRIAL_ROOT_DATA_INIT) {
       Print (L"Data persistence=2; reset=1; UFS log/export=0.\n\n");
     } else {
       Print (L"Data persistence=0; UFS log/export=0.\n\n");
     }
-    if (SHENG_FULL_TRIAL_ROOT_DATA_INIT) {
+    if (SHENG_FULL_TRIAL_ROOT_DATA_RESUME) {
+      Print (L"%s Cancel\n%s BOOT WITH EXISTING DATA ONCE\n\n",
+             mConfirmBoot ? L" " : L">", mConfirmBoot ? L">" : L" ");
+    } else if (SHENG_FULL_TRIAL_ROOT_DATA_INIT) {
       Print (L"%s Cancel\n%s INITIALIZE DATA AND BOOT ONCE\n\n",
              mConfirmBoot ? L" " : L">", mConfirmBoot ? L">" : L" ");
     } else if (SHENG_FULL_TRIAL_ROOT_STATE) {
@@ -519,7 +540,10 @@ Draw (
       Print (L"\nExpected Data seed: %lu bytes\n", (UINT64)SHENG_FULL_TRIAL_RAMDISK_BYTES);
       break;
     case 3:
-      if (SHENG_FULL_TRIAL_ROOT_DATA_INIT) {
+      if (SHENG_FULL_TRIAL_ROOT_DATA_RESUME) {
+        Print (L"> Boot with existing Data once\n\n");
+        Print (L"Normal startup keeps the saved Data overlay.\n\n");
+      } else if (SHENG_FULL_TRIAL_ROOT_DATA_INIT) {
         Print (L"> Initialize Data overlay and boot once\n\n");
         Print (L"Reset discards existing Data overlay changes.\n");
         Print (L"The saved seed supplies the initial Data; normal startup follows.\n\n");
@@ -541,7 +565,9 @@ Draw (
       }
       Print (L"Verified read-only payload volume: %s\nLoader protocol: %r\nBoot arguments checked: %s\nBoot available: %s\n",
              mVerifiedVolume ? L"YES" : L"NO", mLoaderStatus, mArgumentsSafe ? L"YES" : L"NO", CanBoot () ? L"YES" : L"NO");
-      if (SHENG_FULL_TRIAL_ROOT_DATA_INIT) {
+      if (SHENG_FULL_TRIAL_ROOT_DATA_RESUME) {
+        Print (L"Data persistence=2  reset absent  UFS log/export=0\n");
+      } else if (SHENG_FULL_TRIAL_ROOT_DATA_INIT) {
         Print (L"Data persistence=2  reset=1  UFS log/export=0\n");
       } else {
         Print (L"Data persistence=0  UFS log/export=0\n");
@@ -626,7 +652,9 @@ BootFullKernel (
   Request.BootArgs = SHENG_FULL_TRIAL_ARGS;
   Request.Ramdisk = Seed;
   Request.RamdiskSize = (UINTN)Bytes;
-  if (SHENG_FULL_TRIAL_ROOT_DATA_INIT) {
+  if (SHENG_FULL_TRIAL_ROOT_DATA_RESUME) {
+    Print (L"Calling DarwinBoot for normal startup with existing Data.\n");
+  } else if (SHENG_FULL_TRIAL_ROOT_DATA_INIT) {
     Print (L"Calling DarwinBoot to initialize Data and start the full system.\n");
   } else if (SHENG_FULL_TRIAL_ROOT_STATE) {
     Print (L"Calling DarwinBoot for ROOT STATE probe 13; expect a diagnostic panic.\n");

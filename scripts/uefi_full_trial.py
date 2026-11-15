@@ -72,21 +72,41 @@ def root_data_init_args():
     return arguments
 
 
+def root_data_resume_args():
+    """Normal full startup using the existing writable Data overlay, without reset."""
+    arguments = root_data_init_args().removesuffix(' data-reset=1')
+    header = (ROOT / 'package/UefiKernelProbe/ShengRootDataResumeArgs.h').read_text(encoding='utf-8')
+    match = re.search(r'^#define SHENG_ROOT_DATA_RESUME_ARGS L("[^\n]+")$', header, re.MULTILINE)
+    if (match is None or json.loads(match[1]) != arguments or len(arguments) != 775 or
+            hashlib.sha256(arguments.encode('ascii')).hexdigest() != '25236a5f7e75b6d2b70e1956f666faa44851f960fb7914700a623e00ca68d824'):
+        raise ValueError('Root-data-resume requires the exact data-persist=2 baseline without reset')
+    return arguments
+
+
 def trial_mode(root_readonly_probe=False, full_root_trial=False, root_media_probe=False, root_state_probe=False,
-               root_data_init=False):
-    if sum(map(bool, (root_readonly_probe, full_root_trial, root_media_probe, root_state_probe, root_data_init))) > 1:
+               root_data_init=False, root_data_resume=False):
+    if sum(map(bool, (root_readonly_probe, full_root_trial, root_media_probe, root_state_probe, root_data_init, root_data_resume))) > 1:
         raise ValueError('Root diagnostic and full-root trial modes are mutually exclusive')
-    return ('root-data-init' if root_data_init else 'root-state-probe' if root_state_probe else 'root-media-probe' if root_media_probe else 'full-root-trial' if full_root_trial else
+    return ('root-data-resume' if root_data_resume else 'root-data-init' if root_data_init else 'root-state-probe' if root_state_probe else 'root-media-probe' if root_media_probe else 'full-root-trial' if full_root_trial else
             'root-readonly-probe' if root_readonly_probe else 'full-kernel')
 
 
 def handoff_inputs(report, root_readonly_probe=False, full_root_trial=False, root_media_probe=False, root_state_probe=False,
-                   root_data_init=False):
-    mode = trial_mode(root_readonly_probe, full_root_trial, root_media_probe, root_state_probe, root_data_init)
+                   root_data_init=False, root_data_resume=False):
+    mode = trial_mode(root_readonly_probe, full_root_trial, root_media_probe, root_state_probe, root_data_init, root_data_resume)
     result = dict(report)
     result['kernel_args_origin'] = 'Source FAT configuration after the audited repack; not necessarily the effective loader handoff.'
     arguments = report['kernel_args']
-    if root_data_init:
+    if root_data_resume:
+        if arguments != full_root_args():
+            raise ValueError('Root-data-resume source arguments differ from the exact successful baseline')
+        arguments = root_data_resume_args()
+        result['effective_data_persistence'] = 2
+        result['effective_data_reset'] = 0
+        result['data_reset_argument_absent'] = True
+        result['data_policy_scope'] = 'Effective explicit application handoff; source FAT and its configuration remain unchanged.'
+        result['normal_startup_without_diagnostic_panic'] = True
+    elif root_data_init:
         if arguments != full_root_args():
             raise ValueError('Root-data-init source arguments differ from the exact successful baseline')
         arguments = root_data_init_args()
@@ -119,6 +139,7 @@ def render_app_config(inputs):
             '#define SHENG_FULL_TRIAL_ROOT_MEDIA ' + str(int(inputs['trial_mode'] == 'root-media-probe')) + '\n'
             '#define SHENG_FULL_TRIAL_ROOT_STATE ' + str(int(inputs['trial_mode'] == 'root-state-probe')) + '\n'
             '#define SHENG_FULL_TRIAL_ROOT_DATA_INIT ' + str(int(inputs['trial_mode'] == 'root-data-init')) + '\n'
+            '#define SHENG_FULL_TRIAL_ROOT_DATA_RESUME ' + str(int(inputs['trial_mode'] == 'root-data-resume')) + '\n'
             '#define SHENG_FULL_TRIAL_RAMDISK_BYTES ' + str(inputs['seed_bytes']) + 'ULL\n')
 
 
@@ -241,12 +262,12 @@ def media_baseline_inputs(source, fat_module):
 
 
 def prepare(source, output, root_readonly_probe=False, full_root_trial=False, root_media_probe=False, root_state_probe=False,
-            root_data_init=False,
+            root_data_init=False, root_data_resume=False,
             *, media_baseline=None):
     # Validate arguments and mode before reading, repacking or compiling a diagnostic.
-    trial_mode(root_readonly_probe, full_root_trial, root_media_probe, root_state_probe, root_data_init)
-    if media_baseline is not None and (not (root_state_probe or root_data_init) or source is not None):
-        raise ValueError('A media baseline is exclusive to root-state/root-data-init and cannot be combined with a package source')
+    trial_mode(root_readonly_probe, full_root_trial, root_media_probe, root_state_probe, root_data_init, root_data_resume)
+    if media_baseline is not None and (not (root_state_probe or root_data_init or root_data_resume) or source is not None):
+        raise ValueError('A media baseline is exclusive to root-state/root-data-init/root-data-resume and cannot be combined with a package source')
     spec = importlib.util.spec_from_file_location('full_repack', ROOT / 'scripts/repack-sheng-full-trial.py')
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
@@ -260,13 +281,13 @@ def prepare(source, output, root_readonly_probe=False, full_root_trial=False, ro
         kernel_bytes, size = struct.unpack_from('<II', image, 8)
         start = 4096 + ((kernel_bytes + 4095) // 4096) * 4096
         payload = image[start:start + size]
-    if root_data_init:
+    if root_data_init or root_data_resume:
         # Only the effective handoff changes. No diagnostic kernel or FAT edit
-        # belongs to this first-initialization mode.
+        # belongs to either Data startup mode.
         if module.sha(payload) != 'f46ba1674303a37e89dd0e8ad24fe54ed43cd63c7dd29001216b87f36634ed68':
-            raise ValueError('Root-data-init requires the exact unchanged accepted Stage 3 FAT')
+            raise ValueError('Data startup requires the exact unchanged accepted Stage 3 FAT')
         report['diagnostic_kernel_changed'] = False
-        report['effective_data_initialization'] = True
+        report['effective_data_initialization'] = bool(root_data_init)
     if root_state_probe:
         original_payload_sha = module.sha(payload)
         payload, kernel_patch = patch_root_state_volume(payload, module, output / 'logs/root-state-patch')
@@ -295,7 +316,7 @@ def prepare(source, output, root_readonly_probe=False, full_root_trial=False, ro
     report['boot_sector_sha256'] = module.sha(payload[:512])
     report['boot_prefix_hex'] = payload[:16].hex()
     # Existing modes change only the handoff; root-state also changes its guarded kernel ranges.
-    report = handoff_inputs(report, root_readonly_probe, full_root_trial, root_media_probe, root_state_probe, root_data_init)
+    report = handoff_inputs(report, root_readonly_probe, full_root_trial, root_media_probe, root_state_probe, root_data_init, root_data_resume)
     (output / 'full-trial-inputs.json').write_text(json.dumps(report, indent=2) + '\n')
     return report
 

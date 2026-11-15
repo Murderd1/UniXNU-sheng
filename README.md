@@ -141,7 +141,7 @@ UNIXNU_UNIQUE_CHIP_ID=<8 hex digits> scripts/package.sh --os 27 --uefi ../uefi-s
 
 - The firmware inputs come from the official fastboot archive pinned in
   `board.toml` `[firmware.image]`: the preflight downloads it with concurrent
-  HTTP ranges, keeps only the porting inputs, deletes the archive and
+  HTTP ranges, extracts the porting inputs, keeps the complete archive and
   generates the `Binaries/sheng` modules the firmware volume builds from.
   Extracted firmware lives in no repository.
 - `UNIXNU_UNIQUE_CHIP_ID` is the platform seed of the device, 8 hex digits.
@@ -181,8 +181,16 @@ Rust and an iOS object, and verifies the saved seed before a full build.
 1. Fork this repository and set its `UNIXNU_UNIQUE_CHIP_ID` secret to the
    platform seed of the device.
 2. Actions, package, Run workflow, pick the OS profile.
-3. Download the run's artifacts, then delete the run. The images serve the one
-   device whose seed they bake; they are not kept.
+3. Download and keep the run's complete artifacts, manifests and logs. Keep
+   complete input packages and the original installation seed with SHA-256
+   checksums and the source/run identity. The images serve the one device
+   whose seed they bake.
+
+The workflows request 90 days of artifact retention; this is not permanent
+storage and does not extend earlier uploads. Keep complete local backups
+before the Actions copies expire. Preserve Actions runs, artifacts and local
+packages unless the owner explicitly requests their deletion. See
+[artifact retention](reports/artifact-retention.md).
 
 The run installs and asserts its own tools; nothing else is needed on the
 runner.

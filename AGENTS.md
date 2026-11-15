@@ -53,3 +53,18 @@ For storage, also read the [UFS guide](https://unixnu.com/porting/ufs).
 Update each affected area's findings or evidence with its code change.
 The documentation site renders this same record. Follow its schema and
 completion levels for both maintainer and agent work.
+
+## Build input and artifact retention
+
+The owner requires complete input packages and build attachments to be kept.
+Do not delete Actions runs, Actions artifacts, downloaded input archives,
+local packages, installation seeds, build outputs or their diagnostic records
+unless the owner explicitly requests that deletion. Downloading, extracting,
+rebuilding or superseding an artifact does not authorize its deletion.
+The firmware extractor's `--delete-archive` option requires that same explicit
+authorization; normal board preflight and probe builds leave it disabled.
+
+The workflows request 90 days of artifact retention. This is not permanent
+storage and does not extend an existing artifact's expiry. Keep complete local
+backups with SHA-256 checksums, source/run identities, manifests and logs before
+Actions artifacts expire. Preserve successful and failed build evidence.

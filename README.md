@@ -103,6 +103,12 @@ overlay changes: use it only for first initialization, then use a normal image
 with `data-persist=2` and no reset. The existing full-root trial remains
 `data-persist=0`. See [first Data initialization](reports/root-data-init.md).
 
+After first initialization, use
+`--stage full --root-data-resume --handoff-code-clean`, or select `full-resume`
+and handoff code cleaning in Actions. This normal startup uses existing Data
+with `data-persist=2`, `log=0` and no reset. It never falls back to initialization.
+See [normal Data startup](reports/root-data-resume.md).
+
 First restore a matching official Android package, retain the unlocked
 bootloader, and verify Android boot and Fastboot detection. One complete
 successful probe run satisfies the owner's acceptance requirement: a matching

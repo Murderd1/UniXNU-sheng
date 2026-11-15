@@ -71,9 +71,9 @@ def boot_image_policy(stage):
 
 
 def validate_trial_mode(stage, root_readonly_probe, handoff_code_clean=False, full_root_trial=False,
-                        root_media_probe=False, root_state_probe=False):
-    if sum(map(bool, (root_readonly_probe, full_root_trial, root_media_probe, root_state_probe))) > 1:
-        raise ProbeError('Root metadata, full-root, media and state trials are mutually exclusive')
+                        root_media_probe=False, root_state_probe=False, root_data_init=False):
+    if sum(map(bool, (root_readonly_probe, full_root_trial, root_media_probe, root_state_probe, root_data_init))) > 1:
+        raise ProbeError('Root metadata, full-root, media, state and Data initialization trials are mutually exclusive')
     if root_readonly_probe and stage != 'full':
         raise ProbeError('--root-readonly-probe requires --stage full')
     if full_root_trial and (stage != 'full' or not handoff_code_clean):
@@ -82,7 +82,9 @@ def validate_trial_mode(stage, root_readonly_probe, handoff_code_clean=False, fu
         raise ProbeError('--root-media-probe requires --stage full --handoff-code-clean')
     if root_state_probe and (stage != 'full' or not handoff_code_clean):
         raise ProbeError('--root-state-probe requires --stage full --handoff-code-clean')
-    if handoff_code_clean and (stage != 'full' or not (root_readonly_probe or full_root_trial or root_media_probe or root_state_probe)):
+    if root_data_init and (stage != 'full' or not handoff_code_clean):
+        raise ProbeError('--root-data-init requires --stage full --handoff-code-clean')
+    if handoff_code_clean and (stage != 'full' or not (root_readonly_probe or full_root_trial or root_media_probe or root_state_probe or root_data_init)):
         raise ProbeError('--handoff-code-clean requires --stage full and an explicit root trial mode')
 
 
@@ -388,14 +390,14 @@ def self_test():
             else:
                 raise ProbeError(f'{stage}: root-readonly mode must be rejected')
     # Reject invalid mode combinations before any source preparation or output.
-    for stage, readonly, full_root, media, state, clean in itertools.product(
-            ('probe', 'menu', 'full'), *((False, True),) * 5):
-        modes = sum((readonly, full_root, media, state))
+    for stage, readonly, full_root, media, state, data_init, clean in itertools.product(
+            ('probe', 'menu', 'full'), *((False, True),) * 6):
+        modes = sum((readonly, full_root, media, state, data_init))
         accepted = (modes <= 1 and (not modes or stage == 'full') and
-                    (not (full_root or media or state) or clean) and
+                    (not (full_root or media or state or data_init) or clean) and
                     (not clean or (stage == 'full' and modes == 1)))
         try:
-            validate_trial_mode(stage, readonly, clean, full_root, media, state)
+            validate_trial_mode(stage, readonly, clean, full_root, media, state, data_init)
         except ProbeError:
             if accepted:
                 raise ProbeError('Valid root trial mode was rejected')
@@ -428,22 +430,26 @@ def self_test():
     state_args = uefi_full_trial.root_state_args()
     if state_args != baseline + ' native-ufs-probe=13 native-ufs-stats-delay=30':
         raise ProbeError('Root-state arguments changed')
-    for readonly, full_root, media, state in itertools.product((False, True), repeat=4):
-        if sum((readonly, full_root, media, state)) <= 1:
+    init_args = uefi_full_trial.root_data_init_args()
+    if init_args != baseline.replace('data-persist=0', 'data-persist=2') + ' data-reset=1':
+        raise ProbeError('Data initialization must change only persistence and the explicit first-install reset')
+    for readonly, full_root, media, state, data_init in itertools.product((False, True), repeat=5):
+        if sum((readonly, full_root, media, state, data_init)) <= 1:
             continue
         try:
-            uefi_full_trial.handoff_inputs(source_inputs, readonly, full_root, media, state)
+            uefi_full_trial.handoff_inputs(source_inputs, readonly, full_root, media, state, data_init)
         except ValueError:
             pass
         else:
             raise ProbeError('Conflicting root trial input modes must reject')
-    for readonly, full_root, media, state, mode, expected in (
-            (False, False, False, False, 'full-kernel', baseline),
-            (True, False, False, False, 'root-readonly-probe', canonical),
-            (False, True, False, False, 'full-root-trial', baseline),
-            (False, False, True, False, 'root-media-probe', media_args),
-            (False, False, False, True, 'root-state-probe', state_args)):
-        inputs = uefi_full_trial.handoff_inputs(source_inputs, readonly, full_root, media, state)
+    for readonly, full_root, media, state, data_init, mode, expected in (
+            (False, False, False, False, False, 'full-kernel', baseline),
+            (True, False, False, False, False, 'root-readonly-probe', canonical),
+            (False, True, False, False, False, 'full-root-trial', baseline),
+            (False, False, True, False, False, 'root-media-probe', media_args),
+            (False, False, False, True, False, 'root-state-probe', state_args),
+            (False, False, False, False, True, 'root-data-init', init_args)):
+        inputs = uefi_full_trial.handoff_inputs(source_inputs, readonly, full_root, media, state, data_init)
         if any(inputs[key] != value for key, value in source_inputs.items()):
             raise ProbeError('Trial mode changed source configuration or payload provenance')
         if inputs['effective_handoff_args'] != expected or inputs['trial_mode'] != mode:
@@ -452,7 +458,8 @@ def self_test():
         if (('#define SHENG_FULL_TRIAL_ARGS L' + json.dumps(expected)) not in config or
                 f'#define SHENG_FULL_TRIAL_ROOT_READONLY {int(readonly)}\n' not in config or
                 f'#define SHENG_FULL_TRIAL_ROOT_MEDIA {int(media)}\n' not in config or
-                f'#define SHENG_FULL_TRIAL_ROOT_STATE {int(state)}\n' not in config):
+                f'#define SHENG_FULL_TRIAL_ROOT_STATE {int(state)}\n' not in config or
+                f'#define SHENG_FULL_TRIAL_ROOT_DATA_INIT {int(data_init)}\n' not in config):
             raise ProbeError('Generated app configuration differs from effective handoff')
     for changed in (baseline + ' ', baseline.replace('wifi=5', 'wifi=0'), baseline + suffix,
                     baseline + ' native-ufs-probe=11', baseline + ' native-ufs-probe=0', media_args,
@@ -460,7 +467,7 @@ def self_test():
                     baseline + ' autoreset=0', baseline + ' log=0', baseline + ' data-persist=0',
                     baseline.replace('data-persist=0', 'data-persist=2')):
         drifted = dict(source_inputs, kernel_args=changed)
-        for mode in ('root_readonly_probe', 'full_root_trial', 'root_media_probe', 'root_state_probe'):
+        for mode in ('root_readonly_probe', 'full_root_trial', 'root_media_probe', 'root_state_probe', 'root_data_init'):
             try:
                 uefi_full_trial.handoff_inputs(drifted, **{mode: True})
             except ValueError:
@@ -474,9 +481,9 @@ def self_test():
 
 def build(args):
     validate_trial_mode(args.stage, args.root_readonly_probe, args.handoff_code_clean, args.full_root_trial,
-                        args.root_media_probe, args.root_state_probe)
-    if args.full_media_baseline and not args.root_state_probe:
-        raise ProbeError('--full-media-baseline is qualified only for --root-state-probe')
+                        args.root_media_probe, args.root_state_probe, args.root_data_init)
+    if args.full_media_baseline and not (args.root_state_probe or args.root_data_init):
+        raise ProbeError('--full-media-baseline requires --root-state-probe or --root-data-init')
     if args.full_media_baseline and args.full_package:
         raise ProbeError('--full-media-baseline and --full-package are mutually exclusive')
     boot_image_overrides, boot_image_reason = boot_image_policy(args.stage)
@@ -510,7 +517,7 @@ def build(args):
     if args.stage == 'full':
         import uefi_full_trial
         manifest['trial_mode'] = uefi_full_trial.trial_mode(args.root_readonly_probe, args.full_root_trial,
-                                                       args.root_media_probe, args.root_state_probe)
+                                                       args.root_media_probe, args.root_state_probe, args.root_data_init)
     write_json(output / 'manifest.json', manifest)
     checkpoints = checkpoints_document()
     if args.stage == 'menu':
@@ -523,7 +530,13 @@ def build(args):
                                      'exact FAT SHA256 verified', 'read-only payload files',
                                      'manual full XNU handoff', 'real XNU entry', 'platform initialization'],
                            acceptance='One device run. Transport, loader, actual XNU entry and platform initialization require distinct observations. A green loader bar alone does not prove XNU entry.')
-        if args.root_state_probe:
+        if args.root_data_init:
+            checkpoints.update(expected=['ROOT DATA INIT app', 'exact original FAT SHA256 verified',
+                                         'manual initialize Data and full XNU handoff',
+                                         'log=0 data-persist=2 data-reset=1, no diagnostic stop',
+                                         'Data writable backend', 'userspace startup or explicit failure'],
+                               acceptance='First-install Data overlay initialization writes only the bounded userdata store. Reset discards overlay changes; use only once for the authorized installation and remove reset for subsequent boots. The original kernel and seed are unchanged. Host checks do not establish successful Data writes or desktop startup.')
+        elif args.root_state_probe:
             checkpoints.update(expected=['ROOT STATE diagnostic app', 'exact patched FAT SHA256 verified',
                                          'manual probe 13 handoff', '30-second delayed startup state report'],
                                acceptance='Guarded diagnostic-only kernel patch with log=0/data-persist=0. Record root authentication, SystemOS and Data stages separately. A report can be preempted by an earlier panic; no mounted root or launchd is inferred from firmware acceptance.')
@@ -567,10 +580,10 @@ def build(args):
         if args.stage == 'full':
             import uefi_full_trial
             if not args.full_package and not args.full_media_baseline:
-                raise ProbeError('--stage full requires its audited complete package or explicit root-state media baseline')
+                raise ProbeError('--stage full requires its audited complete package or explicit qualified media baseline')
             full_inputs = uefi_full_trial.prepare(args.full_package.resolve() if args.full_package else None, output,
                                                  args.root_readonly_probe, args.full_root_trial,
-                                                 args.root_media_probe, args.root_state_probe,
+                                                 args.root_media_probe, args.root_state_probe, args.root_data_init,
                                                  media_baseline=args.full_media_baseline.resolve() if args.full_media_baseline else None)
             manifest['full_trial'] = full_inputs
             manifest['excluded_stages'] = ['native kernel compilation', 'IPSW download', 'Data seed creation', 'partition flashing']
@@ -707,12 +720,13 @@ def main():
     parser.add_argument('--output', type=Path, default=ROOT / 'out/uefi-probe', help='fresh output directory (must not exist)')
     parser.add_argument('--build-id', help='optional ASCII identifier; source hashes always remain in the manifest')
     parser.add_argument('--stage', choices=('probe', 'menu', 'full'), default='probe', help='probe: standalone UI; menu: embedded FAT fixture; full: existing complete XNU RAM trial')
-    parser.add_argument('--full-media-baseline', type=Path, help='root-state only: fixed accepted media artifact directory when original complete package expired')
+    parser.add_argument('--full-media-baseline', type=Path, help='root-state or root-data-init: fixed accepted media artifact directory when original complete package expired')
     parser.add_argument('--full-package', type=Path, help='audited complete package directory for --stage full')
     parser.add_argument('--root-readonly-probe', action='store_true', help='only with --stage full: run existing kernel UFS root probe 10 with the fixed read-only argument whitelist')
     parser.add_argument('--full-root-trial', action='store_true', help='only with --stage full --handoff-code-clean: use the exact 775-byte baseline without a native UFS probe; log and Data persistence remain disabled')
     parser.add_argument('--root-media-probe', action='store_true', help='only with --stage full --handoff-code-clean: append probe 12 to the exact baseline for a diagnostic media report; log and Data persistence remain disabled')
     parser.add_argument('--root-state-probe', action='store_true', help='only with full + handoff code clean: bounded diagnostic thread patch, probe 13 and 30-second startup-state snapshot; log=0/data-persist=0')
+    parser.add_argument('--root-data-init', action='store_true', help='only with full + handoff code clean: explicitly initialize the installed userdata Data overlay and continue boot; log=0/data-persist=2/data-reset=1; never use for a normal resume')
     parser.add_argument('--handoff-code-clean', action='store_true', help='only with an explicit full root trial: clean the loader handoff code to PoC before the unchanged MMU/TLBI sequence')
     parser.add_argument('-j', '--jobs', type=int, default=4)
     parser.add_argument('--prepare-only', action='store_true', help='stage isolated firmware sources and integration; do not import stock inputs or compile')
@@ -722,7 +736,7 @@ def main():
         parser.error('--jobs must be positive')
     try:
         validate_trial_mode(args.stage, args.root_readonly_probe, args.handoff_code_clean, args.full_root_trial,
-                            args.root_media_probe, args.root_state_probe)
+                            args.root_media_probe, args.root_state_probe, args.root_data_init)
     except ProbeError as error:
         parser.error(str(error))
     try:

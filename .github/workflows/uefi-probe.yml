@@ -58,6 +58,10 @@ on:
         description: "Explicit delayed startup-state diagnostic; log=0/data-persist=0 (requires full + handoff code clean)"
         type: boolean
         default: false
+      root_data_init:
+        description: "First install only: initialize Data overlay and continue boot, log=0/data-persist=2/data-reset=1 (requires full + handoff code clean)"
+        type: boolean
+        default: false
       handoff_code_clean:
         description: "Handoff code PoC clean (explicit full-stage root trial modes only)"
         type: boolean
@@ -119,6 +123,7 @@ jobs:
           FULL_ROOT_TRIAL: ${{ inputs.full_root_trial }}
           ROOT_MEDIA_PROBE: ${{ inputs.root_media_probe }}
           ROOT_STATE_PROBE: ${{ inputs.root_state_probe }}
+          ROOT_DATA_INIT: ${{ inputs.root_data_init }}
           HANDOFF_CODE_CLEAN: ${{ inputs.handoff_code_clean }}
         run: |
           modes=0
@@ -126,9 +131,10 @@ jobs:
           [ "$FULL_ROOT_TRIAL" != true ] || modes=$((modes + 1))
           [ "$ROOT_MEDIA_PROBE" != true ] || modes=$((modes + 1))
           [ "$ROOT_STATE_PROBE" != true ] || modes=$((modes + 1))
+          [ "$ROOT_DATA_INIT" != true ] || modes=$((modes + 1))
           test "$modes" -le 1
           if [ "$modes" -gt 0 ]; then test "$PROBE_STAGE" = full; fi
-          if [ "$FULL_ROOT_TRIAL" = true ] || [ "$ROOT_MEDIA_PROBE" = true ] || [ "$ROOT_STATE_PROBE" = true ]; then
+          if [ "$FULL_ROOT_TRIAL" = true ] || [ "$ROOT_MEDIA_PROBE" = true ] || [ "$ROOT_STATE_PROBE" = true ] || [ "$ROOT_DATA_INIT" = true ]; then
             test "$HANDOFF_CODE_CLEAN" = true
           fi
           if [ "$HANDOFF_CODE_CLEAN" = true ]; then
@@ -152,9 +158,10 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           FULL_PACKAGE_RUN: ${{ inputs.full_package_run || '43467452829' }}
           ROOT_STATE_PROBE: ${{ github.event_name == 'workflow_dispatch' && inputs.root_state_probe }}
+          ROOT_DATA_INIT: ${{ github.event_name == 'workflow_dispatch' && inputs.root_data_init }}
         run: |
           test "$FULL_PACKAGE_RUN" = 43467452829
-          if [ "$ROOT_STATE_PROBE" = true ]; then
+          if [ "$ROOT_STATE_PROBE" = true ] || [ "$ROOT_DATA_INIT" = true ]; then
             gh run download 43616475669 --repo "$GITHUB_REPOSITORY" --name uefi-probe-43616475669-1 --dir full-media-baseline
           else
             gh run download "$FULL_PACKAGE_RUN" --repo "$GITHUB_REPOSITORY" --name images-27 --dir full-package
@@ -167,11 +174,12 @@ jobs:
           FULL_ROOT_TRIAL: ${{ github.event_name == 'workflow_dispatch' && inputs.full_root_trial }}
           ROOT_MEDIA_PROBE: ${{ github.event_name == 'workflow_dispatch' && inputs.root_media_probe }}
           ROOT_STATE_PROBE: ${{ github.event_name == 'workflow_dispatch' && inputs.root_state_probe }}
+          ROOT_DATA_INIT: ${{ github.event_name == 'workflow_dispatch' && inputs.root_data_init }}
           HANDOFF_CODE_CLEAN: ${{ github.event_name == 'push' || inputs.handoff_code_clean }}
         run: |
           args=(--unixnu probe-sources/UniXNU --uefi probe-sources/uefi-sheng --stage "$PROBE_STAGE" --output "probe-output-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}")
           if [ "$PROBE_STAGE" = full ]; then
-            if [ "$ROOT_STATE_PROBE" = true ]; then
+            if [ "$ROOT_STATE_PROBE" = true ] || [ "$ROOT_DATA_INIT" = true ]; then
               args+=(--full-media-baseline full-media-baseline)
             else
               args+=(--full-package full-package/ipados-27.0.1-24A446/sheng_ipados27)
@@ -181,6 +189,7 @@ jobs:
           [ "$FULL_ROOT_TRIAL" != true ] || args+=(--full-root-trial)
           [ "$ROOT_MEDIA_PROBE" != true ] || args+=(--root-media-probe)
           [ "$ROOT_STATE_PROBE" != true ] || args+=(--root-state-probe)
+          [ "$ROOT_DATA_INIT" != true ] || args+=(--root-data-init)
           [ "$HANDOFF_CODE_CLEAN" != true ] || args+=(--handoff-code-clean)
           [ "$PREPARE_ONLY" != true ] || args+=(--prepare-only)
           python3 probe-sources/device/scripts/build-uefi-probe.py "${args[@]}" -j 4
